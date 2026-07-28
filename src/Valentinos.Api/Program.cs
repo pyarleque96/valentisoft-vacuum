@@ -1,3 +1,5 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Api.Multitenancy;
 using Valentinos.Application.Abstractions;
@@ -12,9 +14,20 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Falta la cadena de conexión 'Default'.");
 builder.Services.AddInfrastructure(connectionString, builder.Configuration);
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("public-reports", o =>
+    {
+        o.PermitLimit = 20;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
+    });
+});
+
 var app = builder.Build();
 
 app.UseMiddleware<TenantResolutionMiddleware>();
+app.UseRateLimiter();
 app.MapControllers();
 
 // Migración + seed al arrancar (excepto en entorno de tests)
