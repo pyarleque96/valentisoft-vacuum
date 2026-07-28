@@ -17,11 +17,13 @@ public static class DemoSeeder
             .FirstOrDefaultAsync(t => t.Slug == "mastercorp");
         if (tenant is null) return; // DbSeeder ya debería haber creado MasterCorp
 
-        // Email destino para ver la alerta en la demo (si se provee).
-        if (!string.IsNullOrWhiteSpace(notificationEmail) && tenant.NotificationEmails != notificationEmail)
+        // Setting de la org: email por reporte APAGADO por ahora (se usa la página de KPIs).
+        // El correo destino queda configurado por si se reactiva.
+        if (tenant.EmailNotificationsEnabled || tenant.NotificationEmails != notificationEmail)
         {
-            tenant.EmailNotificationsEnabled = true;
-            tenant.NotificationEmails = notificationEmail;
+            tenant.EmailNotificationsEnabled = false;
+            if (!string.IsNullOrWhiteSpace(notificationEmail))
+                tenant.NotificationEmails = notificationEmail;
             await db.SaveChangesAsync();
         }
 

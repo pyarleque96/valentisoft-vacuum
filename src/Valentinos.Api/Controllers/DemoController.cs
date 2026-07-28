@@ -33,13 +33,25 @@ public class DemoController : ControllerBase
     // Se registra en el log y se envía el correo (plantilla operativa, en inglés).
     [HttpPost("/api/public/{slug}/assets/{codigo}/operational")]
     public async Task<IActionResult> MarkOperational(string slug, string codigo,
-        [FromForm] string? reportadoPor, [FromForm] string? nota)
+        [FromForm] string? reportadoPor, [FromForm] string? nota, [FromForm] string? estado)
     {
         var (tenant, asset, _) = await ResolveAsync(slug, codigo);
         if (tenant is null || asset is null) return NotFound();
 
-        _logger.LogInformation("✅ CHECK-IN operativo: {Codigo} ({Tenant}) marcado OPERATIVO por {Por}. Nota: {Nota}",
-            asset.Codigo, tenant.Nombre,
+        var estadoKey = string.IsNullOrWhiteSpace(estado) ? "operational" : estado;
+
+        // Persistir el check-in (alimenta la página de KPIs).
+        _db.StatusCheckins.Add(new Domain.Entities.StatusCheckin
+        {
+            EmployeeName = string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor,
+            AssetCodigo = asset.Codigo,
+            EstadoKey = estadoKey,
+            Nota = nota
+        });
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("✅ CHECK-IN {Estado}: {Codigo} ({Tenant}) por {Por}. Nota: {Nota}",
+            estadoKey, asset.Codigo, tenant.Nombre,
             string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor,
             string.IsNullOrWhiteSpace(nota) ? "-" : nota);
 
@@ -288,6 +300,7 @@ $@"<!doctype html>
   .dot-green {{ background:#16a34a; }}
   .dot-amber {{ background:#f59e0b; }}
   .dot-red {{ background:#ef4444; }}
+  .dot-gray {{ background:#94a3b8; }}
   .stat:has(input:checked) {{ border-color:#1560A8; background:#eef4fb; }}
   /* Confirmación de envío estilo Material: onda verde + check animado. */
   .success {{ text-align:center; padding:28px 0 12px; }}
@@ -378,6 +391,7 @@ $@"<div class=""card"">
       <label class=""stat""><input type=""radio"" name=""estado"" value=""operational"" checked onchange=""onStatus()""> <span data-i18n=""stOperativa"">Operational</span> <b class=""dot dot-green""></b></label>
       <label class=""stat""><input type=""radio"" name=""estado"" value=""AMedias"" onchange=""onStatus()""> <span data-i18n=""stFallas"">Working with faults</span> <b class=""dot dot-amber""></b></label>
       <label class=""stat""><input type=""radio"" name=""estado"" value=""NoFunciona"" onchange=""onStatus()""> <span data-i18n=""stFuera"">Out of service</span> <b class=""dot dot-red""></b></label>
+      <label class=""stat""><input type=""radio"" name=""estado"" value=""unavailable"" onchange=""onStatus()""> <span data-i18n=""stUnavailable"">No vacuum available</span> <b class=""dot dot-gray""></b></label>
     </div>
 
     <label data-i18n=""notesLbl"">Notes</label>
@@ -398,17 +412,21 @@ $@"<div class=""card"">
   const I18N = {{
     en: {{ title:'Report', sub:'Housekeeping', name:'Employee *', namePh:'Start typing your name…',
       statusLbl:'Status *', stOperativa:'Operational', stFallas:'Working with faults', stFuera:'Out of service',
+      stUnavailable:'No vacuum available',
       notesLbl:'Notes', notesPh:'Add any details (optional)', notesPhReq:'Describe the problem',
       photos:'Photos (optional)', send:'Send', sending:'Sending…',
       okReport:'Report sent! Thank you. The maintenance team has been notified.',
       okOperational:'Thanks! This equipment was marked as operational.',
+      okUnavailable:'Thanks! Noted — no vacuum available.',
       fail:""Couldn't send"", net:'Network error: ' }},
     es: {{ title:'Reportar', sub:'Housekeeping', name:'Empleado *', namePh:'Empieza a escribir tu nombre…',
       statusLbl:'Estado *', stOperativa:'Operativa', stFallas:'Funciona con fallas', stFuera:'Fuera de servicio',
+      stUnavailable:'Sin aspiradora disponible',
       notesLbl:'Notas', notesPh:'Agrega detalles (opcional)', notesPhReq:'Describe el problema',
       photos:'Fotos (opcional)', send:'Enviar', sending:'Enviando…',
       okReport:'¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
       okOperational:'¡Gracias! Este equipo se marcó como operativo.',
+      okUnavailable:'¡Gracias! Registrado — sin aspiradora disponible.',
       fail:'No se pudo enviar', net:'Error de red: ' }}
   }};
   let LANG = 'en';
@@ -489,10 +507,11 @@ $@"<div class=""card"">
         const fd = new FormData();
         fd.append('reportadoPor', f.reportadoPor.value);
         fd.append('nota', f.descripcion.value);
+        fd.append('estado', estadoVal()); // operational | unavailable
         r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST', body: fd }});
       }}
       if (r.ok) {{
-        vSuccess(problem ? d.okReport : d.okOperational);
+        vSuccess(problem ? d.okReport : (estadoVal() === 'unavailable' ? d.okUnavailable : d.okOperational));
       }} else {{
         const t = await r.text();
         msg.innerHTML = '<div class=""err"">'+d.fail+' ('+r.status+'). '+t+'</div>';
