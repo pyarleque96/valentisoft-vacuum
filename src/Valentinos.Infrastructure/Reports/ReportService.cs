@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Abstractions;
+using Valentinos.Application.Notifications;
 using Valentinos.Application.Reports;
 using Valentinos.Application.Storage;
 using Valentinos.Domain.Entities;
@@ -12,12 +13,15 @@ public class ReportService : IReportService
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly IFileStorage _storage;
+    private readonly INotificationService _notifications;
 
-    public ReportService(AppDbContext db, ITenantContext tenant, IFileStorage storage)
+    public ReportService(AppDbContext db, ITenantContext tenant, IFileStorage storage,
+        INotificationService notifications)
     {
         _db = db;
         _tenant = tenant;
         _storage = storage;
+        _notifications = notifications;
     }
 
     public static string ExtensionForContentType(string contentType) => contentType switch
@@ -51,6 +55,17 @@ public class ReportService : IReportService
         }
 
         await _db.SaveChangesAsync(ct);
+
+        try
+        {
+            await _notifications.NotifyReportCreatedAsync(new ReportCreatedNotification(
+                report.TenantId, asset.Codigo, report.Severidad.ToString(),
+                report.Descripcion, report.Ubicacion, report.ReportadoPor), ct);
+        }
+        catch
+        {
+            // La creación del reporte no debe fallar si la notificación falla.
+        }
 
         return new ReportDto(
             report.Id, asset.Id, asset.Codigo, report.Descripcion,

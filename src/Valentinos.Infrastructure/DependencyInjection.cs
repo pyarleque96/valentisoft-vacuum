@@ -2,10 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Valentinos.Application.Assets;
+using Valentinos.Application.Notifications;
 using Valentinos.Application.Qr;
 using Valentinos.Application.Reports;
 using Valentinos.Application.Storage;
 using Valentinos.Infrastructure.Assets;
+using Valentinos.Infrastructure.Notifications;
 using Valentinos.Infrastructure.Persistence;
 using Valentinos.Infrastructure.Qr;
 using Valentinos.Infrastructure.Reports;
@@ -35,6 +37,16 @@ public static class DependencyInjection
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
         services.AddScoped<IReportService, ReportService>();
+
+        var smtpOptions = new SmtpOptions();
+        configuration?.GetSection("Smtp").Bind(smtpOptions);
+        services.AddSingleton(smtpOptions);
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddScoped<INotificationChannel, EmailChannel>();
+        services.AddScoped<INotificationChannel, InAppChannel>();
+        services.AddScoped<INotificationChannel, WhatsAppChannel>();
+        services.AddScoped<INotificationChannel, SmsChannel>();
+        services.AddScoped<INotificationService, NotificationService>();
 
         return services;
     }

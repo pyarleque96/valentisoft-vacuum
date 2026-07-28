@@ -34,6 +34,13 @@ public class ReportServiceTests
             => Task.FromResult(Files.TryGetValue(fileKey, out var b) ? b : null);
     }
 
+    private sealed class NoopNotifications : Valentinos.Application.Notifications.INotificationService
+    {
+        public Task NotifyReportCreatedAsync(
+            Valentinos.Application.Notifications.ReportCreatedNotification n, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
+
     private static (AppDbContext db, IAssetService assets, IReportService reports, InMemoryFileStorage fs)
         Build(Guid tenant)
     {
@@ -44,7 +51,7 @@ public class ReportServiceTests
         var db = new AppDbContext(options, ctx);
         var fs = new InMemoryFileStorage();
         var assets = new AssetService(db, ctx);
-        var reports = new ReportService(db, ctx, fs);
+        var reports = new ReportService(db, ctx, fs, new NoopNotifications());
         return (db, assets, reports, fs);
     }
 
