@@ -211,6 +211,8 @@ $@"<!doctype html>
   .wrap.fill > .card {{ flex: 1; display: flex; flex-direction: column; }}
   .wrap.fill form {{ display: flex; flex-direction: column; flex: 1; }}
   .wrap.fill form button[type=""submit""] {{ margin-top: auto; }}
+  /* Gap mínimo garantizado entre el último campo (notas) y el botón. */
+  .wrap.fill form textarea {{ margin-bottom: 20px; }}
   .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 22px; }}
   h1 {{ font-size: 20px; margin: 0 0 4px; }}
   .muted {{ color: #94a3b8; font-size: 14px; }}
@@ -250,6 +252,17 @@ $@"<!doctype html>
     font-weight:700; font-size:15px; }}
   a.btn-outline:hover {{ border-color:#64748b; background:rgba(148,163,184,.08); }}
   input.ro {{ color:#94a3b8; }}
+  /* Autocompletar personalizado (dropdown propio, confiable en móvil). */
+  .ac {{ position:relative; }}
+  .ac-list {{ position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
+    background:#0f172a; border:1px solid #475569; border-radius:10px; max-height:230px;
+    overflow-y:auto; display:none; box-shadow:0 12px 30px rgba(2,8,20,.5); }}
+  .ac-list.open {{ display:block; }}
+  .ac-item {{ padding:12px 14px; cursor:pointer; font-size:15px; color:#e2e8f0;
+    border-bottom:1px solid #1e293b; }}
+  .ac-item:last-child {{ border-bottom:0; }}
+  .ac-item.active, .ac-item:hover {{ background:rgba(34,197,94,.14); color:#dcfce7; }}
+  .ac-empty {{ padding:12px 14px; color:#94a3b8; font-size:14px; }}
   /* Selector Operational / A problem en una sola línea (radios excluyentes). */
   .segbar {{ display:flex; gap:10px; }}
   .seg {{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;
@@ -336,11 +349,10 @@ $@"<div class=""card"">
 
   <form id=""f"">
     <label data-i18n=""name"">Employee *</label>
-    <input name=""reportadoPor"" required list=""employees"" autocomplete=""off"" data-i18n-ph=""namePh"" placeholder=""Start typing your name…"">
-    <datalist id=""employees""></datalist>
-
-    <label data-i18n=""timeLbl"">Time</label>
-    <input id=""now"" class=""ro"" readonly>
+    <div class=""ac"">
+      <input name=""reportadoPor"" id=""emp"" required autocomplete=""off"" data-i18n-ph=""namePh"" placeholder=""Start typing your name…"">
+      <div class=""ac-list"" id=""empList""></div>
+    </div>
 
     <label data-i18n=""statusLbl"">Status *</label>
     <div class=""segbar"">
@@ -408,15 +420,40 @@ $@"<div class=""card"">
     ta.required = p;
     ta.placeholder = p ? I18N[LANG].notesPhReq : I18N[LANG].notesPh;
   }}
-  function updNow() {{ const el = document.getElementById('now'); if (el) el.value = new Date().toLocaleString(); }}
+  let EMPLOYEES = [];
+  function acEsc(s) {{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/""/g,'&quot;'); }}
+  function acRender(filter) {{
+    const box = document.getElementById('empList');
+    const q = (filter||'').trim().toLowerCase();
+    const matches = EMPLOYEES.filter(function (n) {{ return !q || n.toLowerCase().indexOf(q) >= 0; }}).slice(0,60);
+    box.innerHTML = matches.length
+      ? matches.map(function (n) {{ return '<div class=""ac-item"" data-v=""'+acEsc(n)+'"">'+acEsc(n)+'</div>'; }}).join('')
+      : '<div class=""ac-empty"">No matches</div>';
+    box.classList.add('open');
+  }}
+  function acWire() {{
+    const inp = document.getElementById('emp');
+    const box = document.getElementById('empList');
+    if (!inp || !box) return;
+    inp.addEventListener('focus', function () {{ acRender(inp.value); }});
+    inp.addEventListener('input', function () {{ acRender(inp.value); }});
+    // pointerdown cubre mouse y touch; preventDefault evita el blur antes del tap.
+    box.addEventListener('pointerdown', function (e) {{
+      const it = e.target.closest('.ac-item'); if (!it) return;
+      e.preventDefault();
+      inp.value = it.getAttribute('data-v');
+      box.classList.remove('open');
+    }});
+    document.addEventListener('click', function (e) {{
+      if (!e.target.closest('.ac')) box.classList.remove('open');
+    }});
+  }}
   async function loadEmployees() {{
     try {{
       const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/employees');
-      if (!r.ok) return;
-      const list = await r.json();
-      const dl = document.getElementById('employees');
-      dl.innerHTML = list.map(function (n) {{ return '<option value=\""' + n.replace(/\""/g,'&quot;') + '\""></option>'; }}).join('');
+      if (r.ok) EMPLOYEES = await r.json();
     }} catch (e) {{}}
+    acWire();
   }}
 
   const f = document.getElementById('f');
@@ -452,7 +489,6 @@ $@"<div class=""card"">
     }}
   }});
 
-  updNow();
   loadEmployees();
   let init = 'en';
   try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
