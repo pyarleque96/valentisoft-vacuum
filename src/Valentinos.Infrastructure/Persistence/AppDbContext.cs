@@ -17,6 +17,8 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<AssetType> AssetTypes => Set<AssetType>();
+    public DbSet<Asset> Assets => Set<Asset>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -27,6 +29,24 @@ public class AppDbContext : DbContext
             e.HasIndex(t => t.Slug).IsUnique();
             e.Property(t => t.Slug).HasMaxLength(100).IsRequired();
             e.Property(t => t.Nombre).HasMaxLength(200).IsRequired();
+        });
+
+        modelBuilder.Entity<AssetType>(e =>
+        {
+            e.Property(t => t.Nombre).HasMaxLength(200).IsRequired();
+            e.Property(t => t.Prefijo).HasMaxLength(20).IsRequired();
+            e.HasIndex(t => new { t.TenantId, t.Prefijo }).IsUnique();
+        });
+
+        modelBuilder.Entity<Asset>(e =>
+        {
+            e.Property(a => a.Codigo).HasMaxLength(40).IsRequired();
+            e.Property(a => a.Ubicacion).HasMaxLength(200);
+            e.HasIndex(a => new { a.TenantId, a.Codigo }).IsUnique();
+            e.HasOne<AssetType>()
+             .WithMany()
+             .HasForeignKey(a => a.AssetTypeId)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Global query filter por TenantId para toda entidad ITenantOwned
