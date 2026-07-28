@@ -196,7 +196,9 @@ namespace Valentinos.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("EmailNotificationsEnabled")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("InAppNotificationsEnabled")
                         .HasColumnType("bit");

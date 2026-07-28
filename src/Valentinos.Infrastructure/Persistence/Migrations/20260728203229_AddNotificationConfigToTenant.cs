@@ -15,7 +15,7 @@ namespace Valentinos.Infrastructure.Persistence.Migrations
                 table: "Tenants",
                 type: "bit",
                 nullable: false,
-                defaultValue: false);
+                defaultValue: true);
 
             migrationBuilder.AddColumn<bool>(
                 name: "InAppNotificationsEnabled",

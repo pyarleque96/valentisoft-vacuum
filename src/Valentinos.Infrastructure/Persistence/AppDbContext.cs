@@ -31,6 +31,7 @@ public class AppDbContext : DbContext
             e.HasIndex(t => t.Slug).IsUnique();
             e.Property(t => t.Slug).HasMaxLength(100).IsRequired();
             e.Property(t => t.Nombre).HasMaxLength(200).IsRequired();
+            e.Property(t => t.EmailNotificationsEnabled).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<AssetType>(e =>

@@ -12,7 +12,7 @@ using Valentinos.Infrastructure.Persistence;
 namespace Valentinos.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260728202645_AddNotificationConfigToTenant")]
+    [Migration("20260728203229_AddNotificationConfigToTenant")]
     partial class AddNotificationConfigToTenant
     {
         /// <inheritdoc />
@@ -199,7 +199,9 @@ namespace Valentinos.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("EmailNotificationsEnabled")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("InAppNotificationsEnabled")
                         .HasColumnType("bit");
