@@ -31,6 +31,11 @@ public class SmtpEmailSender : IEmailSender
         using var message = new MailMessage { From = new MailAddress(from, fromName), Subject = subject, Body = body, IsBodyHtml = isHtml };
         foreach (var addr in to) message.To.Add(addr);
 
+        // Copia (CC), configurable — separada por comas.
+        if (!string.IsNullOrWhiteSpace(_options.Cc))
+            foreach (var cc in _options.Cc.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                message.CC.Add(cc);
+
         using var client = new SmtpClient(_options.Host, _options.Port)
         {
             EnableSsl = true, // STARTTLS en el puerto 587

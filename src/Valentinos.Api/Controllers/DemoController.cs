@@ -220,10 +220,10 @@ $@"<!doctype html>
   .flag.active {{ opacity:1; box-shadow:0 0 0 2px #22c55e; }}
   .flag img {{ display:block; border-radius:999px; }}
   .hero {{ text-align:center; padding:20px 0 8px; }}
-  /* Logo real de Valentino's recortado en círculo, centrado en la V. */
+  /* Logo real de Valentino's (solo la V) recortado en círculo. */
   .logo {{ width:124px; height:124px; margin:8px auto 16px; border-radius:50%;
-           background-image:url(/images/brand/valentinos-logo.jpg);
-           background-repeat:no-repeat; background-size:330%; background-position:50% 33%;
+           background-image:url(/images/brand/valentinos-v.jpg);
+           background-repeat:no-repeat; background-size:150%; background-position:50% 46%;
            border:1px solid rgba(148,163,184,.28);
            box-shadow:0 12px 34px rgba(2,8,20,.55), inset 0 1px 0 rgba(255,255,255,.05); }}
   .btn-report {{ display:block; width:100%; box-sizing:border-box; text-decoration:none; text-align:center;
