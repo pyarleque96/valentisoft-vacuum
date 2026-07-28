@@ -8,8 +8,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
-builder.Services.AddInfrastructure(
-    builder.Configuration.GetConnectionString("Default")!);
+var connectionString = builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("Falta la cadena de conexión 'Default'.");
+builder.Services.AddInfrastructure(connectionString);
 
 var app = builder.Build();
 

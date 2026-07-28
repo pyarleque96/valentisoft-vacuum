@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Valentinos.Infrastructure.Persistence;
 using Xunit;
 
@@ -57,11 +58,22 @@ public class WhoAmIEndpointTests : IClassFixture<WhoAmIEndpointTests.Factory>
 
                 services.AddDbContext<AppDbContext>(o =>
                     o.UseInMemoryDatabase("WhoAmITests"));
-
-                using var scope = services.BuildServiceProvider().CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                DbSeeder.SeedAsync(db).GetAwaiter().GetResult();
             });
+        }
+
+        // La siembra se hace después de construir el host (no dentro de
+        // ConfigureServices, donde llamar a BuildServiceProvider() crea un
+        // ServiceProvider descartable ajeno al del host y dispara el analizador
+        // ASP0000).
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            var host = base.CreateHost(builder);
+
+            using var scope = host.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            DbSeeder.SeedAsync(db).GetAwaiter().GetResult();
+
+            return host;
         }
     }
 }

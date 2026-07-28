@@ -70,14 +70,18 @@ public class AppDbContext : DbContext
             if (entry.Entity is not ITenantOwned owned)
                 continue;
 
+            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+                continue;
+
+            // Ninguna escritura (alta, modificación o borrado) sobre una entidad
+            // multi-tenant se permite sin tenant en contexto (fail-closed).
+            if (_tenantContext.TenantId is not Guid tid)
+                throw new InvalidOperationException(
+                    "No hay tenant en contexto al escribir una entidad multi-tenant.");
+
             switch (entry.State)
             {
                 case EntityState.Added:
-                    // Toda entidad multi-tenant se sella con el tenant del contexto.
-                    // Sin tenant en contexto no se permite escribir (fail-closed).
-                    if (_tenantContext.TenantId is not Guid tid)
-                        throw new InvalidOperationException(
-                            "No hay tenant en contexto al insertar una entidad multi-tenant.");
                     // Un TenantId explícito distinto al del contexto es un intento de
                     // escribir para otro tenant: se rechaza.
                     if (owned.TenantId != Guid.Empty && owned.TenantId != tid)
@@ -87,17 +91,29 @@ public class AppDbContext : DbContext
                     break;
 
                 case EntityState.Modified:
+                {
+                    // El registro modificado debe pertenecer al tenant del contexto.
+                    var original = (Guid)entry.OriginalValues[nameof(ITenantOwned.TenantId)]!;
+                    if (original != tid)
+                        throw new UnauthorizedAccessException(
+                            "No se puede modificar una entidad de otro tenant.");
                     // El TenantId de una entidad existente es inmutable: reasignarlo
                     // movería la fila a otro tenant.
-                    var original = (Guid)entry.OriginalValues[nameof(ITenantOwned.TenantId)]!;
                     if (owned.TenantId != original)
                         throw new UnauthorizedAccessException(
                             "No se puede cambiar el tenant de una entidad existente.");
-                    // El registro modificado debe pertenecer al tenant del contexto.
-                    if (_tenantContext.TenantId is Guid ctid && original != ctid)
-                        throw new UnauthorizedAccessException(
-                            "No se puede modificar una entidad de otro tenant.");
                     break;
+                }
+
+                case EntityState.Deleted:
+                {
+                    // Solo se puede borrar una fila que pertenezca al tenant del contexto.
+                    var original = (Guid)entry.OriginalValues[nameof(ITenantOwned.TenantId)]!;
+                    if (original != tid)
+                        throw new UnauthorizedAccessException(
+                            "No se puede borrar una entidad de otro tenant.");
+                    break;
+                }
             }
         }
     }

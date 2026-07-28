@@ -119,4 +119,52 @@ public class TenantFilterTests
 
         Assert.Equal(tenant, db.Widgets.Single().TenantId);
     }
+
+    [Fact]
+    public void SaveChanges_BorrarEntidadDeOtroTenant_LanzaExcepcion()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(dbName).Options;
+
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        Guid widgetId;
+        var ctxA = new FakeTenantContext();
+        ctxA.Set(tenantA);
+        using (var db = new TestDbContext(options, ctxA))
+        {
+            var widget = new Widget { Nombre = "A" };
+            db.Widgets.Add(widget);
+            db.SaveChanges();
+            widgetId = widget.Id;
+        }
+
+        // Tenant B intenta borrar la fila de tenant A adjuntando un stub con el
+        // TenantId real (simula un cliente que conoce/adivina el Id ajeno).
+        var ctxB = new FakeTenantContext();
+        ctxB.Set(tenantB);
+        using var dbB = new TestDbContext(options, ctxB);
+        var stub = new Widget { Id = widgetId, TenantId = tenantA };
+        dbB.Attach(stub);
+        dbB.Widgets.Remove(stub);
+
+        Assert.Throws<UnauthorizedAccessException>(() => dbB.SaveChanges());
+    }
+
+    [Fact]
+    public void SaveChanges_ModificarSinTenantEnContexto_LanzaExcepcion()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+
+        var ctx = new FakeTenantContext(); // sin tenant
+        using var db = new TestDbContext(options, ctx);
+        var stub = new Widget { Id = Guid.NewGuid(), TenantId = Guid.NewGuid(), Nombre = "X" };
+        db.Attach(stub);
+        stub.Nombre = "Y";
+
+        Assert.Throws<InvalidOperationException>(() => db.SaveChanges());
+    }
 }

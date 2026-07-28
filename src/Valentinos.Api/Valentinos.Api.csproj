@@ -8,6 +8,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <!-- Pin directo para resolver NU1903: Microsoft.OpenApi 2.0.0 (transitivo vía
+         Microsoft.AspNetCore.OpenApi) tiene una vulnerabilidad alta conocida
+         (GHSA-v5pm-xwqc-g5wc, CVE-2026-49451). Rango afectado en la línea 2.X:
+         >= 2.0.0-preview.11, <= 2.7.4. 2.7.5 es la versión parcheada más baja. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
