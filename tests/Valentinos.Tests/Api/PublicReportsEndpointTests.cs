@@ -73,6 +73,66 @@ public class PublicReportsEndpointTests : IClassFixture<PublicReportsEndpointTes
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
     }
 
+    [Fact]
+    public async Task PostReport_SeveridadInvalida_Devuelve400()
+    {
+        var client = _factory.CreateClient();
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("No aspira"), "descripcion" },
+            { new StringContent("XYZ"), "severidad" },
+            { new StringContent(Factory.SeedCodigo), "codigo" },
+        };
+        var resp = await client.PostAsync("/api/public/mastercorp/reports", form);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostReport_DemasiadasFotos_Devuelve400()
+    {
+        var client = _factory.CreateClient();
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("No aspira"), "descripcion" },
+            { new StringContent("Leve"), "severidad" },
+            { new StringContent(Factory.SeedCodigo), "codigo" },
+        };
+        for (var i = 0; i < 6; i++)
+        {
+            var fotoContent = new ByteArrayContent(new byte[] { 1, 2, 3 });
+            fotoContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+            form.Add(fotoContent, "fotos", $"foto{i}.png");
+        }
+        var resp = await client.PostAsync("/api/public/mastercorp/reports", form);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostReport_FotoDemasiadoGrande_Devuelve400()
+    {
+        var client = _factory.CreateClient();
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("No aspira"), "descripcion" },
+            { new StringContent("Leve"), "severidad" },
+            { new StringContent(Factory.SeedCodigo), "codigo" },
+        };
+        var bigBytes = new byte[6 * 1024 * 1024];
+        var fotoContent = new ByteArrayContent(bigBytes);
+        fotoContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+        form.Add(fotoContent, "fotos", "grande.png");
+        var resp = await client.PostAsync("/api/public/mastercorp/reports", form);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAsset_Inexistente_Devuelve404()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/api/public/mastercorp/assets/VAC-999");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
     public class Factory : WebApplicationFactory<Program>
     {
         public const string SeedCodigo = "VAC-001";
