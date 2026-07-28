@@ -20,7 +20,8 @@ public class NotificationServiceTests
     {
         public int Calls;
         public List<string> LastTo = new();
-        public Task SendAsync(IReadOnlyList<string> to, string subject, string body, CancellationToken ct = default)
+        public Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
+            CancellationToken ct = default)
         {
             Calls++;
             LastTo = to.ToList();

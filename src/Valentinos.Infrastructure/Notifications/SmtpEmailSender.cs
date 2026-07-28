@@ -16,7 +16,8 @@ public class SmtpEmailSender : IEmailSender
         _logger = logger;
     }
 
-    public async Task SendAsync(IReadOnlyList<string> to, string subject, string body, CancellationToken ct = default)
+    public async Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
+        CancellationToken ct = default)
     {
         // Apagado por default: sin SMTP configurado no se intenta enviar (no-op seguro).
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Host) || to.Count == 0)
@@ -25,7 +26,7 @@ public class SmtpEmailSender : IEmailSender
         // Gmail exige que el remitente sea la cuenta autenticada.
         var from = string.IsNullOrWhiteSpace(_options.From) ? _options.User : _options.From;
 
-        using var message = new MailMessage { From = new MailAddress(from), Subject = subject, Body = body };
+        using var message = new MailMessage { From = new MailAddress(from), Subject = subject, Body = body, IsBodyHtml = isHtml };
         foreach (var addr in to) message.To.Add(addr);
 
         using var client = new SmtpClient(_options.Host, _options.Port)

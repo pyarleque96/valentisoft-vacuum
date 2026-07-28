@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Qr;
 using Valentinos.Infrastructure.Persistence;
@@ -16,11 +17,25 @@ public class DemoController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IQrRenderer _qr;
+    private readonly ILogger<DemoController> _logger;
 
-    public DemoController(AppDbContext db, IQrRenderer qr)
+    public DemoController(AppDbContext db, IQrRenderer qr, ILogger<DemoController> logger)
     {
         _db = db;
         _qr = qr;
+        _logger = logger;
+    }
+
+    // Check-in de estado "operativo": el housekeeper confirma que el equipo funciona.
+    // Demo: se registra en el log (aún no se persiste; irá al histórico de estado/KPIs).
+    [HttpPost("/api/public/{slug}/assets/{codigo}/operational")]
+    public async Task<IActionResult> MarkOperational(string slug, string codigo)
+    {
+        var (tenant, asset, _) = await ResolveAsync(slug, codigo);
+        if (tenant is null || asset is null) return NotFound();
+        _logger.LogInformation("✅ CHECK-IN operativo: activo {Codigo} del tenant {Tenant} marcado como OPERATIVO.",
+            asset.Codigo, tenant.Nombre);
+        return Ok(new { codigo = asset.Codigo, estado = "Operativo" });
     }
 
     // URL pública real del request: prioriza los headers que inyecta Cloudflare
@@ -99,6 +114,18 @@ public class DemoController : ControllerBase
     }
 
 
+    // Previsualización del correo profesional (demo): muestra cómo se ve la alerta.
+    [HttpGet("/demo/email-preview")]
+    public IActionResult EmailPreview()
+    {
+        var sample = new Valentinos.Application.Notifications.ReportCreatedNotification(
+            Guid.Empty, "VAC-001", "NoFunciona",
+            "La aspiradora no enciende y hace un ruido fuerte al conectarla.",
+            "Piso 3", "Ana");
+        var html = Valentinos.Infrastructure.Notifications.EmailChannel.RenderPreview("MasterCorp", sample);
+        return Content(html, "text/html; charset=utf-8");
+    }
+
     // Landing de demo: muestra el QR y el enlace del formulario para el activo semilla.
     [HttpGet("/demo/{slug}")]
     public async Task<IActionResult> DemoLanding(string slug)
@@ -175,12 +202,63 @@ $@"<!doctype html>
            -webkit-background-clip:text; background-clip:text; color:transparent;
            text-shadow:0 1px 1px rgba(0,0,0,.25); letter-spacing:1px;
            padding-right:6px; /* balance visual de la itálica */ }}
-  a.btn-report {{ display:block; text-decoration:none; text-align:center; margin-top:22px;
-    padding:16px; border-radius:12px; background:#22c55e; color:#052e16;
-    font-weight:800; font-size:17px; }}
+  .btn-report {{ display:block; width:100%; box-sizing:border-box; text-decoration:none; text-align:center;
+    margin-top:22px; padding:16px; border:0; border-radius:12px; background:#22c55e; color:#052e16;
+    font-weight:800; font-size:17px; cursor:pointer; }}
+  a.btn-outline {{ display:block; text-decoration:none; text-align:center; margin-top:12px;
+    padding:15px; border-radius:12px; background:transparent; border:1px solid #475569; color:#e2e8f0;
+    font-weight:700; font-size:15px; }}
+  a.btn-outline:hover {{ border-color:#64748b; background:rgba(148,163,184,.08); }}
+  /* Confirmación de envío estilo Material: onda verde + check animado. */
+  .success {{ text-align:center; padding:28px 0 12px; }}
+  .ck {{ position:relative; width:100px; height:100px; margin:0 auto 16px; border-radius:50%;
+    background:#22c55e; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 10px 30px rgba(34,197,94,.35); animation: ck-pop .45s cubic-bezier(.2,.85,.3,1.25) both; }}
+  .ck-svg {{ width:52px; height:52px; position:relative; z-index:2; }}
+  .ck-check {{ fill:none; stroke:#ffffff; stroke-width:3; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:26; stroke-dashoffset:26; animation: ck-draw .4s ease-out .45s forwards; }}
+  .wave {{ position:absolute; inset:0; border-radius:50%; background:#22c55e; opacity:.35; z-index:0;
+    animation: ck-wave 1s ease-out .15s both; }}
+  @keyframes ck-pop {{ from {{ transform:scale(0); }} to {{ transform:scale(1); }} }}
+  @keyframes ck-draw {{ to {{ stroke-dashoffset:0; }} }}
+  @keyframes ck-wave {{ from {{ transform:scale(.6); opacity:.5; }} to {{ transform:scale(2.3); opacity:0; }} }}
+  .msg-ok {{ color:#dcfce7; font-weight:600; font-size:16px; max-width:340px; margin:0 auto; }}
+  .success .badge {{ margin-top:16px; }}
+  /* Cuando el reporte/estado se completa, el contenido se centra verticalmente. */
+  .card.done {{ justify-content:center; }}
+  @media (prefers-reduced-motion: reduce) {{
+    .ck, .ck-check, .wave {{ animation:none; }}
+    .ck-check {{ stroke-dashoffset:0; }}
+  }}
 </style>
 </head>
-<body><div class=""wrap {wrapClass}"">{bodyInner}</div></body>
+<body><div class=""wrap {wrapClass}"">{bodyInner}</div>
+<script>
+  // Confirmación compartida: check animado centrado + mensaje + chip del activo.
+  function vSuccess(text) {{
+    var badge = document.querySelector('.badge');
+    var chip = badge ? badge.textContent : '';
+    var card = document.querySelector('.card');
+    if (card) card.classList.add('done');
+    ['.top', '.muted', '.hero', '#f'].forEach(function (s) {{
+      var el = document.querySelector(s); if (el) el.style.display = 'none';
+    }});
+    if (badge) badge.style.display = 'none';
+    document.querySelectorAll('.btn-report, .btn-outline').forEach(function (el) {{ el.style.display = 'none'; }});
+    var msg = document.getElementById('msg');
+    if (!msg) return;
+    msg.innerHTML =
+      '<div class=""success"">'
+      + '<div class=""ck""><span class=""wave""></span>'
+      + '<svg class=""ck-svg"" viewBox=""0 0 24 24"">'
+      + '<path class=""ck-check"" d=""M4 12.5l5 5 11-11""/>'
+      + '</svg></div>'
+      + '<div class=""msg-ok"">' + text + '</div>'
+      + (chip ? '<div class=""badge"">' + chip + '</div>' : '')
+      + '</div>';
+  }}
+</script>
+</body>
 </html>";
 
     private static string FormHtml(string tenantNombre, string slug, string codigo, string tipoNombre)
@@ -195,7 +273,7 @@ $@"<!doctype html>
         var inner =
 $@"<div class=""card"">
   <div class=""top"">
-    <h1 data-i18n=""title"">Report a breakdown</h1>
+    <h1 data-i18n=""title"">Report an issue</h1>
     <div class=""langs"">
       <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')"">
         <img src=""/images/flags/us-circle.svg"" alt=""English"" width=""26"" height=""26"">
@@ -231,17 +309,17 @@ $@"<div class=""card"">
 </div>
 <script>
   const I18N = {{
-    en: {{ title:'Report a breakdown', sub:'Housekeeping', name:'Your name *', namePh:'e.g. Ana',
+    en: {{ title:'Report an issue', sub:'Housekeeping', name:'Your name *', namePh:'e.g. Ana',
       desc:""What's wrong with the equipment? *"", descPh:""e.g. won't turn on / makes noise / no suction"",
       sev:'Severity *', sevLeve:'Minor', sevAMedias:'Partially works', sevNoFunciona:'Not working',
       photos:'Photos (optional)', send:'Send report', sending:'Sending…',
-      ok:'✅ Report sent! Thank you. The maintenance team has been notified.',
+      ok:'Report sent! Thank you. The maintenance team has been notified.',
       fail:""Couldn't send"", net:'Network error: ' }},
-    es: {{ title:'Reportar avería', sub:'Housekeeping', name:'Tu nombre *', namePh:'Ej. Ana',
+    es: {{ title:'Reportar un problema', sub:'Housekeeping', name:'Tu nombre *', namePh:'Ej. Ana',
       desc:'¿Qué le pasa al equipo? *', descPh:'Ej. no enciende / hace ruido / no aspira',
       sev:'Severidad *', sevLeve:'Leve', sevAMedias:'Funciona a medias', sevNoFunciona:'No funciona',
       photos:'Fotos (opcional)', send:'Enviar reporte', sending:'Enviando…',
-      ok:'✅ ¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
+      ok:'¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
       fail:'No se pudo enviar', net:'Error de red: ' }}
   }};
   let LANG = 'en';
@@ -268,8 +346,7 @@ $@"<div class=""card"">
     try {{
       const r = await fetch('/api/public/' + encodeURIComponent({slugJs}) + '/reports', {{ method:'POST', body: fd }});
       if (r.status === 201) {{
-        f.style.display='none';
-        msg.innerHTML = '<div class=""ok"">'+d.ok+'</div>';
+        vSuccess(d.ok);
       }} else {{
         const t = await r.text();
         msg.innerHTML = '<div class=""err"">'+d.fail+' ('+r.status+'). '+t+'</div>';
@@ -296,6 +373,8 @@ $@"<div class=""card"">
         var codigoH = WebUtility.HtmlEncode(codigo);
         var slugUrl = Uri.EscapeDataString(slug);
         var codigoUrl = Uri.EscapeDataString(codigo);
+        var slugJs = JsonSerializer.Serialize(slug);
+        var codigoJs = JsonSerializer.Serialize(codigo);
 
         var inner =
 $@"<div class=""card"">
@@ -315,17 +394,30 @@ $@"<div class=""card"">
     <!-- Logo placeholder de Valentino's (una V elegante). Reemplazar por el logo real. -->
     <div class=""logo""><span>V</span></div>
     <h1 style=""margin:0"">{tenantH}</h1>
-    <div class=""muted"" data-i18n=""prompt"">Found a problem with this equipment?</div>
+    <div class=""muted"" data-i18n=""prompt"">Is this equipment working?</div>
     <div class=""badge"">{tipoH} · {codigoH}</div>
   </div>
 
-  <a class=""btn-report"" href=""/r/{slugUrl}/{codigoUrl}/reportar"" data-i18n=""report"">Report a breakdown</a>
+  <button type=""button"" class=""btn-report"" onclick=""markOperational()"" data-i18n=""operational"">It's working</button>
+  <a class=""btn-outline"" href=""/r/{slugUrl}/{codigoUrl}/reportar"" data-i18n=""reportProblem"">Report a problem</a>
+  <div id=""msg""></div>
 </div>
 <script>
+  const SLUG = {slugJs};
+  const CODE = {codigoJs};
   const I18N = {{
-    en: {{ prompt:'Found a problem with this equipment?', report:'Report a breakdown' }},
-    es: {{ prompt:'¿Este equipo tiene un problema?', report:'Reportar avería' }}
+    en: {{ prompt:'Is this equipment working?', operational:""It's working"", reportProblem:'Report a problem',
+      opOk:'Thanks! This equipment was marked as operational.' }},
+    es: {{ prompt:'¿Este equipo está funcionando?', operational:'Está funcionando', reportProblem:'Reportar un problema',
+      opOk:'¡Gracias! Este equipo se marcó como operativo.' }}
   }};
+  async function markOperational() {{
+    const d = I18N[LANG];
+    try {{
+      await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST' }});
+    }} catch (e) {{}}
+    vSuccess(d.opOk);
+  }}
   let LANG = 'en';
   function setLang(l) {{
     LANG = I18N[l] ? l : 'en';
