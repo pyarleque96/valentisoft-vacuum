@@ -23,6 +23,7 @@ public static class DependencyInjection
         configuration?.GetSection("Qr").Bind(qrOptions);
         services.AddSingleton(qrOptions);
         services.AddSingleton<IQrRenderer, SkiaQrRenderer>();
+        services.AddSingleton<IQrSheetRenderer, SkiaQrSheetRenderer>();
 
         return services;
     }
