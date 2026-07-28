@@ -41,6 +41,45 @@ public class LocalFileStorageTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(() => fs.GetAsync("../secreto.txt"));
     }
 
+    [Fact]
+    public async Task GetAsync_ConFileKeyAbsoluto_LanzaExcepcion()
+    {
+        var fs = Build();
+        var outside = Path.Combine(Path.GetTempPath(), "outside-" + Guid.NewGuid() + ".txt");
+        await File.WriteAllTextAsync(outside, "secreto");
+        try
+        {
+            await Assert.ThrowsAsync<ArgumentException>(() => fs.GetAsync(outside));
+        }
+        finally
+        {
+            File.Delete(outside);
+        }
+    }
+
+    [Fact]
+    public async Task GetAsync_ConPrefijoHermanoQueComparteCadena_LanzaExcepcion()
+    {
+        var fs = Build();
+        // Comparte el prefijo de cadena de _root (p. ej. "...storage" vs "...storage.bak")
+        // pero es un directorio hermano distinto, no un subdirectorio real.
+        var siblingKey = _root + ".bak" + Path.DirectorySeparatorChar + "secret.txt";
+        await Assert.ThrowsAsync<ArgumentException>(() => fs.GetAsync(siblingKey));
+    }
+
+    [Fact]
+    public async Task SaveAsync_ConPrefijoDosPuntos_LanzaExcepcion()
+    {
+        var fs = Build();
+        var bytes = Encoding.UTF8.GetBytes("hola");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => fs.SaveAsync(bytes, "jpg", ".."));
+
+        // El directorio raíz de este test no debe haberse creado ni contener nada:
+        // la excepción debe lanzarse antes de tocar el sistema de archivos.
+        Assert.False(Directory.Exists(_root));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
