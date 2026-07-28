@@ -18,26 +18,44 @@ public class DemoController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IQrRenderer _qr;
     private readonly ILogger<DemoController> _logger;
+    private readonly Valentinos.Application.Notifications.IEmailSender _email;
 
-    public DemoController(AppDbContext db, IQrRenderer qr, ILogger<DemoController> logger)
+    public DemoController(AppDbContext db, IQrRenderer qr, ILogger<DemoController> logger,
+        Valentinos.Application.Notifications.IEmailSender email)
     {
         _db = db;
         _qr = qr;
         _logger = logger;
+        _email = email;
     }
 
     // Check-in de estado "operativo": el housekeeper confirma que el equipo funciona.
-    // Demo: se registra en el log (aún no se persiste; irá al histórico de estado/KPIs).
+    // Se registra en el log y se envía el correo (plantilla operativa, en inglés).
     [HttpPost("/api/public/{slug}/assets/{codigo}/operational")]
     public async Task<IActionResult> MarkOperational(string slug, string codigo,
         [FromForm] string? reportadoPor, [FromForm] string? nota)
     {
         var (tenant, asset, _) = await ResolveAsync(slug, codigo);
         if (tenant is null || asset is null) return NotFound();
+
         _logger.LogInformation("✅ CHECK-IN operativo: {Codigo} ({Tenant}) marcado OPERATIVO por {Por}. Nota: {Nota}",
             asset.Codigo, tenant.Nombre,
             string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor,
             string.IsNullOrWhiteSpace(nota) ? "-" : nota);
+
+        // Correo de check-in operativo (mismo canal/config de email que los reportes).
+        if (tenant.EmailNotificationsEnabled)
+        {
+            var to = Valentinos.Infrastructure.Notifications.EmailChannel.Recipients(tenant);
+            if (to.Length > 0)
+            {
+                var html = Valentinos.Infrastructure.Notifications.EmailChannel.BuildOperationalHtml(
+                    tenant.Nombre, asset.Codigo, reportadoPor, nota, DateTime.Now.ToString("g"));
+                var subject = Valentinos.Infrastructure.Notifications.EmailChannel.OperationalSubject(asset.Codigo);
+                try { await _email.SendAsync(to, subject, html, isHtml: true); }
+                catch (Exception ex) { _logger.LogError(ex, "Fallo email operativo"); }
+            }
+        }
         return Ok(new { codigo = asset.Codigo, estado = "Operativo" });
     }
 
@@ -117,15 +135,24 @@ public class DemoController : ControllerBase
     }
 
 
-    // Previsualización del correo profesional (demo): muestra cómo se ve la alerta.
+    // Previsualización del correo (demo): plantilla de ISSUE (en inglés).
     [HttpGet("/demo/email-preview")]
     public IActionResult EmailPreview()
     {
         var sample = new Valentinos.Application.Notifications.ReportCreatedNotification(
             Guid.Empty, "VAC-001", "NoFunciona",
-            "La aspiradora no enciende y hace un ruido fuerte al conectarla.",
-            "Piso 3", "Ana");
-        var html = Valentinos.Infrastructure.Notifications.EmailChannel.RenderPreview("MasterCorp", sample);
+            "The vacuum won't turn on and makes a loud noise when plugged in.",
+            "Floor 3", "Ana");
+        var html = Valentinos.Infrastructure.Notifications.EmailChannel.RenderIssuePreview("MasterCorp", sample);
+        return Content(html, "text/html; charset=utf-8");
+    }
+
+    // Previsualización del correo (demo): plantilla OPERATIONAL (en inglés).
+    [HttpGet("/demo/email-preview-operational")]
+    public IActionResult EmailPreviewOperational()
+    {
+        var html = Valentinos.Infrastructure.Notifications.EmailChannel.RenderOperationalPreview(
+            "MasterCorp", "VAC-001", "Ana", "Cleaned filter, working fine.", DateTime.Now.ToString("g"));
         return Content(html, "text/html; charset=utf-8");
     }
 
@@ -193,18 +220,12 @@ $@"<!doctype html>
   .flag.active {{ opacity:1; box-shadow:0 0 0 2px #22c55e; }}
   .flag img {{ display:block; border-radius:999px; }}
   .hero {{ text-align:center; padding:20px 0 8px; }}
-  /* Placeholder del logo de Valentino's: una V elegante. Reemplazar por el logo real. */
-  .logo {{ width:120px; height:120px; margin:8px auto 18px; border-radius:50%;
-           display:flex; align-items:center; justify-content:center;
-           background:radial-gradient(circle at 32% 28%, #123047, #0b1f30 70%);
-           border:1px solid rgba(148,163,184,.25);
-           box-shadow:0 12px 34px rgba(2,8,20,.55), inset 0 1px 0 rgba(255,255,255,.06); }}
-  .logo span {{ font-family: Georgia, 'Times New Roman', 'Playfair Display', serif;
-           font-style: italic; font-weight: 700; font-size: 76px; line-height:1;
-           background:linear-gradient(180deg,#e9d9a7,#c9a24b);
-           -webkit-background-clip:text; background-clip:text; color:transparent;
-           text-shadow:0 1px 1px rgba(0,0,0,.25); letter-spacing:1px;
-           padding-right:6px; /* balance visual de la itálica */ }}
+  /* Logo real de Valentino's recortado en círculo, centrado en la V. */
+  .logo {{ width:124px; height:124px; margin:8px auto 16px; border-radius:50%;
+           background-image:url(/images/brand/valentinos-logo.jpg);
+           background-repeat:no-repeat; background-size:330%; background-position:50% 33%;
+           border:1px solid rgba(148,163,184,.28);
+           box-shadow:0 12px 34px rgba(2,8,20,.55), inset 0 1px 0 rgba(255,255,255,.05); }}
   .btn-report {{ display:block; width:100%; box-sizing:border-box; text-decoration:none; text-align:center;
     margin-top:22px; padding:16px; border:0; border-radius:12px; background:#22c55e; color:#052e16;
     font-weight:800; font-size:17px; cursor:pointer; }}
@@ -437,8 +458,7 @@ $@"<div class=""card"">
   </div>
 
   <div class=""hero"">
-    <!-- Logo placeholder de Valentino's (una V elegante). Reemplazar por el logo real. -->
-    <div class=""logo""><span>V</span></div>
+    <div class=""logo"" role=""img"" aria-label=""Valentino's Group""></div>
     <h1 style=""margin:0"">{tenantH}</h1>
     <div class=""muted"" data-i18n=""prompt"">Report this equipment's status</div>
     <div class=""badge"">{tipoH} · {codigoH}</div>

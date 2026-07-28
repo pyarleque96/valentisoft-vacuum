@@ -23,10 +23,12 @@ public class SmtpEmailSender : IEmailSender
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Host) || to.Count == 0)
             return;
 
-        // Gmail exige que el remitente sea la cuenta autenticada.
+        // Gmail exige que el remitente sea la cuenta autenticada. Usamos un nombre
+        // visible ("Valentino's") como máscara: el destinatario ve el nombre, no el correo.
         var from = string.IsNullOrWhiteSpace(_options.From) ? _options.User : _options.From;
+        var fromName = string.IsNullOrWhiteSpace(_options.FromName) ? "Valentino's" : _options.FromName;
 
-        using var message = new MailMessage { From = new MailAddress(from), Subject = subject, Body = body, IsBodyHtml = isHtml };
+        using var message = new MailMessage { From = new MailAddress(from, fromName), Subject = subject, Body = body, IsBodyHtml = isHtml };
         foreach (var addr in to) message.To.Add(addr);
 
         using var client = new SmtpClient(_options.Host, _options.Port)
