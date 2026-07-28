@@ -16,9 +16,10 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Falta la cadena de conexión 'Default'.");
 builder.Services.AddInfrastructure(connectionString, builder.Configuration);
 
-// En desarrollo/demo, las alertas de email se imprimen en la consola en vez de
-// enviarse por SMTP (sobrescribe el IEmailSender registrado por AddInfrastructure).
-if (builder.Environment.IsDevelopment())
+// En desarrollo, si NO hay SMTP configurado, las alertas se imprimen en la consola.
+// Si Smtp:Enabled=true (config/user-secrets), se usa el SmtpEmailSender real.
+var smtpEnabled = builder.Configuration.GetValue<bool>("Smtp:Enabled");
+if (builder.Environment.IsDevelopment() && !smtpEnabled)
     builder.Services.AddScoped<IEmailSender, ConsoleEmailSender>();
 
 builder.Services.AddRateLimiter(options =>
@@ -38,6 +39,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+app.UseStaticFiles(); // sirve wwwroot (banderas de idioma de la demo)
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseRateLimiter();
 app.MapControllers();
@@ -54,7 +56,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     if (app.Environment.IsDevelopment())
     {
         var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        await DemoSeeder.SeedAsync(db, tenantContext, "pedroyarleque96@gmail.com");
+        await DemoSeeder.SeedAsync(db, tenantContext, "ramcesdrag@gmail.com");
     }
 }
 

@@ -123,6 +123,13 @@ $@"<!doctype html>
   img.qr {{ width: 260px; max-width: 80%; height:auto; background:#fff; border-radius:12px; padding:8px; }}
   a {{ color:#7dd3fc; }}
   code {{ background:#0f172a; padding:2px 6px; border-radius:6px; }}
+  .top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }}
+  .langs {{ display:flex; gap:6px; flex:0 0 auto; }}
+  .flag {{ padding:2px; background:transparent; border:0; width:auto; margin:0; cursor:pointer;
+           border-radius:999px; line-height:0; opacity:.45; transition:opacity .15s, box-shadow .15s; }}
+  .flag:hover {{ opacity:.85; }}
+  .flag.active {{ opacity:1; box-shadow:0 0 0 2px #22c55e; }}
+  .flag img {{ display:block; border-radius:999px; }}
 </style>
 </head>
 <body><div class=""wrap"">{bodyInner}</div></body>
@@ -139,58 +146,97 @@ $@"<!doctype html>
 
         var inner =
 $@"<div class=""card"">
-  <h1>Reportar avería</h1>
-  <div class=""muted"">{tenantH} · Housekeeping</div>
+  <div class=""top"">
+    <h1 data-i18n=""title"">Report a breakdown</h1>
+    <div class=""langs"">
+      <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')"">
+        <img src=""/images/flags/us-circle.svg"" alt=""English"" width=""26"" height=""26"">
+      </button>
+      <button type=""button"" class=""flag"" id=""flag-es"" title=""Español"" onclick=""setLang('es')"">
+        <img src=""/images/flags/es-circle.svg"" alt=""Español"" width=""26"" height=""26"">
+      </button>
+    </div>
+  </div>
+  <div class=""muted"">{tenantH} · <span data-i18n=""sub"">Housekeeping</span></div>
   <div class=""badge"">{tipoH} · {codigoH}</div>
 
   <form id=""f"">
-    <label>¿Qué le pasa al equipo? *</label>
-    <textarea name=""descripcion"" required placeholder=""Ej. No enciende / hace ruido / no aspira""></textarea>
+    <label data-i18n=""name"">Your name *</label>
+    <input name=""reportadoPor"" required data-i18n-ph=""namePh"" placeholder=""e.g. Ana"">
 
-    <label>Severidad *</label>
+    <label data-i18n=""desc"">What's wrong with the equipment? *</label>
+    <textarea name=""descripcion"" required data-i18n-ph=""descPh"" placeholder=""e.g. won't turn on / makes noise / no suction""></textarea>
+
+    <label data-i18n=""sev"">Severity *</label>
     <select name=""severidad"" required>
-      <option value=""Leve"">Leve</option>
-      <option value=""AMedias"">Funciona a medias</option>
-      <option value=""NoFunciona"" selected>No funciona</option>
+      <option value=""Leve"" data-i18n=""sevLeve"">Minor</option>
+      <option value=""AMedias"" data-i18n=""sevAMedias"">Partially works</option>
+      <option value=""NoFunciona"" selected data-i18n=""sevNoFunciona"">Not working</option>
     </select>
 
-    <label>Piso / ubicación</label>
-    <input name=""ubicacion"" placeholder=""Ej. Piso 3, habitación 305"">
-
-    <label>Tu nombre (opcional)</label>
-    <input name=""reportadoPor"" placeholder=""Ej. Ana"">
-
-    <label>Fotos (opcional)</label>
+    <label data-i18n=""photos"">Photos (optional)</label>
     <input type=""file"" name=""fotos"" accept=""image/*"" multiple>
 
-    <button type=""submit"" id=""btn"">Enviar reporte</button>
+    <button type=""submit"" id=""btn"" data-i18n=""send"">Send report</button>
   </form>
   <div id=""msg""></div>
 </div>
 <script>
+  const I18N = {{
+    en: {{ title:'Report a breakdown', sub:'Housekeeping', name:'Your name *', namePh:'e.g. Ana',
+      desc:""What's wrong with the equipment? *"", descPh:""e.g. won't turn on / makes noise / no suction"",
+      sev:'Severity *', sevLeve:'Minor', sevAMedias:'Partially works', sevNoFunciona:'Not working',
+      photos:'Photos (optional)', send:'Send report', sending:'Sending…',
+      ok:'✅ Report sent! Thank you. The maintenance team has been notified.',
+      fail:""Couldn't send"", net:'Network error: ' }},
+    es: {{ title:'Reportar avería', sub:'Housekeeping', name:'Tu nombre *', namePh:'Ej. Ana',
+      desc:'¿Qué le pasa al equipo? *', descPh:'Ej. no enciende / hace ruido / no aspira',
+      sev:'Severidad *', sevLeve:'Leve', sevAMedias:'Funciona a medias', sevNoFunciona:'No funciona',
+      photos:'Fotos (opcional)', send:'Enviar reporte', sending:'Enviando…',
+      ok:'✅ ¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
+      fail:'No se pudo enviar', net:'Error de red: ' }}
+  }};
+  let LANG = 'en';
+  function setLang(l) {{
+    LANG = I18N[l] ? l : 'en';
+    const d = I18N[LANG];
+    document.querySelectorAll('[data-i18n]').forEach(el => {{ const k = el.getAttribute('data-i18n'); if (d[k]) el.textContent = d[k]; }});
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {{ const k = el.getAttribute('data-i18n-ph'); if (d[k]) el.placeholder = d[k]; }});
+    document.getElementById('flag-en').classList.toggle('active', LANG==='en');
+    document.getElementById('flag-es').classList.toggle('active', LANG==='es');
+    document.documentElement.lang = LANG;
+    try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
+  }}
+
   const f = document.getElementById('f');
   const btn = document.getElementById('btn');
   const msg = document.getElementById('msg');
   f.addEventListener('submit', async (e) => {{
     e.preventDefault();
-    btn.disabled = true; btn.textContent = 'Enviando…'; msg.innerHTML = '';
+    const d = I18N[LANG];
+    btn.disabled = true; btn.textContent = d.sending; msg.innerHTML = '';
     const fd = new FormData(f);
     fd.append('codigo', {codigoJs});
     try {{
       const r = await fetch('/api/public/' + encodeURIComponent({slugJs}) + '/reports', {{ method:'POST', body: fd }});
       if (r.status === 201) {{
         f.style.display='none';
-        msg.innerHTML = '<div class=""ok"">✅ ¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.</div>';
+        msg.innerHTML = '<div class=""ok"">'+d.ok+'</div>';
       }} else {{
         const t = await r.text();
-        msg.innerHTML = '<div class=""err"">No se pudo enviar ('+r.status+'). '+t+'</div>';
-        btn.disabled=false; btn.textContent='Enviar reporte';
+        msg.innerHTML = '<div class=""err"">'+d.fail+' ('+r.status+'). '+t+'</div>';
+        btn.disabled=false; btn.textContent=d.send;
       }}
     }} catch (err) {{
-      msg.innerHTML = '<div class=""err"">Error de red: '+err+'</div>';
-      btn.disabled=false; btn.textContent='Enviar reporte';
+      msg.innerHTML = '<div class=""err"">'+d.net+err+'</div>';
+      btn.disabled=false; btn.textContent=d.send;
     }}
   }});
+
+  // Inglés por default; respeta la última elección del usuario si existe.
+  let init = 'en';
+  try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
+  setLang(init);
 </script>";
         return Layout($"Reportar {codigoH}", inner);
     }
