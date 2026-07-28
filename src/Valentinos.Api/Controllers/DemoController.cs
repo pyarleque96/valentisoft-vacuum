@@ -29,12 +29,15 @@ public class DemoController : ControllerBase
     // Check-in de estado "operativo": el housekeeper confirma que el equipo funciona.
     // Demo: se registra en el log (aún no se persiste; irá al histórico de estado/KPIs).
     [HttpPost("/api/public/{slug}/assets/{codigo}/operational")]
-    public async Task<IActionResult> MarkOperational(string slug, string codigo)
+    public async Task<IActionResult> MarkOperational(string slug, string codigo,
+        [FromForm] string? reportadoPor, [FromForm] string? nota)
     {
         var (tenant, asset, _) = await ResolveAsync(slug, codigo);
         if (tenant is null || asset is null) return NotFound();
-        _logger.LogInformation("✅ CHECK-IN operativo: activo {Codigo} del tenant {Tenant} marcado como OPERATIVO.",
-            asset.Codigo, tenant.Nombre);
+        _logger.LogInformation("✅ CHECK-IN operativo: {Codigo} ({Tenant}) marcado OPERATIVO por {Por}. Nota: {Nota}",
+            asset.Codigo, tenant.Nombre,
+            string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor,
+            string.IsNullOrWhiteSpace(nota) ? "-" : nota);
         return Ok(new { codigo = asset.Codigo, estado = "Operativo" });
     }
 
@@ -209,6 +212,14 @@ $@"<!doctype html>
     padding:15px; border-radius:12px; background:transparent; border:1px solid #475569; color:#e2e8f0;
     font-weight:700; font-size:15px; }}
   a.btn-outline:hover {{ border-color:#64748b; background:rgba(148,163,184,.08); }}
+  input.ro {{ color:#94a3b8; }}
+  /* Selector Operational / A problem en una sola línea (radios excluyentes). */
+  .segbar {{ display:flex; gap:10px; }}
+  .seg {{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;
+    border:1px solid #475569; border-radius:10px; padding:12px; font-size:15px; font-weight:600;
+    transition:border-color .15s, background .15s; }}
+  .seg input {{ width:auto; margin:0; accent-color:#22c55e; }}
+  .seg:has(input:checked) {{ border-color:#22c55e; background:rgba(34,197,94,.10); color:#dcfce7; }}
   /* Confirmación de envío estilo Material: onda verde + check animado. */
   .success {{ text-align:center; padding:28px 0 12px; }}
   .ck {{ position:relative; width:100px; height:100px; margin:0 auto 16px; border-radius:50%;
@@ -273,7 +284,7 @@ $@"<!doctype html>
         var inner =
 $@"<div class=""card"">
   <div class=""top"">
-    <h1 data-i18n=""title"">Report an issue</h1>
+    <h1 data-i18n=""title"">Report</h1>
     <div class=""langs"">
       <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')"">
         <img src=""/images/flags/us-circle.svg"" alt=""English"" width=""26"" height=""26"">
@@ -290,36 +301,53 @@ $@"<div class=""card"">
     <label data-i18n=""name"">Your name *</label>
     <input name=""reportadoPor"" required data-i18n-ph=""namePh"" placeholder=""e.g. Ana"">
 
-    <label data-i18n=""desc"">What's wrong with the equipment? *</label>
-    <textarea name=""descripcion"" required data-i18n-ph=""descPh"" placeholder=""e.g. won't turn on / makes noise / no suction""></textarea>
+    <label data-i18n=""timeLbl"">Time</label>
+    <input id=""now"" class=""ro"" readonly>
 
-    <label data-i18n=""sev"">Severity *</label>
-    <select name=""severidad"" required>
-      <option value=""Leve"" data-i18n=""sevLeve"">Minor</option>
-      <option value=""AMedias"" data-i18n=""sevAMedias"">Partially works</option>
-      <option value=""NoFunciona"" selected data-i18n=""sevNoFunciona"">Not working</option>
-    </select>
+    <label data-i18n=""statusLbl"">Status *</label>
+    <div class=""segbar"">
+      <label class=""seg""><input type=""radio"" name=""estado"" value=""operational"" checked onchange=""onStatus()""> <span data-i18n=""optOperational"">Operational</span></label>
+      <label class=""seg""><input type=""radio"" name=""estado"" value=""problem"" onchange=""onStatus()""> <span data-i18n=""optProblem"">A problem</span></label>
+    </div>
 
-    <label data-i18n=""photos"">Photos (optional)</label>
-    <input type=""file"" name=""fotos"" accept=""image/*"" multiple>
+    <div id=""problemFields"" style=""display:none"">
+      <label data-i18n=""sev"">What's the problem?</label>
+      <select name=""severidad"">
+        <option value=""NoFunciona"" selected data-i18n=""sevNoFunciona"">Not working</option>
+        <option value=""AMedias"" data-i18n=""sevAMedias"">Partially working</option>
+        <option value=""Leve"" data-i18n=""sevLeve"">Minor issue</option>
+      </select>
 
-    <button type=""submit"" id=""btn"" data-i18n=""send"">Send report</button>
+      <label data-i18n=""photos"">Photos (optional)</label>
+      <input type=""file"" name=""fotos"" accept=""image/*"" multiple>
+    </div>
+
+    <label data-i18n=""notesLbl"">Notes</label>
+    <textarea name=""descripcion"" data-i18n-ph=""notesPh"" placeholder=""Add any details (optional)""></textarea>
+
+    <button type=""submit"" id=""btn"" data-i18n=""send"">Send</button>
   </form>
   <div id=""msg""></div>
 </div>
 <script>
+  const SLUG = {slugJs};
+  const CODE = {codigoJs};
   const I18N = {{
-    en: {{ title:'Report an issue', sub:'Housekeeping', name:'Your name *', namePh:'e.g. Ana',
-      desc:""What's wrong with the equipment? *"", descPh:""e.g. won't turn on / makes noise / no suction"",
-      sev:'Severity *', sevLeve:'Minor', sevAMedias:'Partially works', sevNoFunciona:'Not working',
-      photos:'Photos (optional)', send:'Send report', sending:'Sending…',
-      ok:'Report sent! Thank you. The maintenance team has been notified.',
+    en: {{ title:'Report', sub:'Housekeeping', name:'Your name *', namePh:'e.g. Ana',
+      timeLbl:'Time', statusLbl:'Status *', optOperational:'Operational', optProblem:'A problem',
+      sev:""What's the problem?"", sevNoFunciona:'Not working', sevAMedias:'Partially working', sevLeve:'Minor issue',
+      notesLbl:'Notes', notesPh:'Add any details (optional)', notesPhReq:'Describe the problem',
+      photos:'Photos (optional)', send:'Send', sending:'Sending…',
+      okReport:'Report sent! Thank you. The maintenance team has been notified.',
+      okOperational:'Thanks! This equipment was marked as operational.',
       fail:""Couldn't send"", net:'Network error: ' }},
-    es: {{ title:'Reportar un problema', sub:'Housekeeping', name:'Tu nombre *', namePh:'Ej. Ana',
-      desc:'¿Qué le pasa al equipo? *', descPh:'Ej. no enciende / hace ruido / no aspira',
-      sev:'Severidad *', sevLeve:'Leve', sevAMedias:'Funciona a medias', sevNoFunciona:'No funciona',
-      photos:'Fotos (opcional)', send:'Enviar reporte', sending:'Enviando…',
-      ok:'¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
+    es: {{ title:'Reportar', sub:'Housekeeping', name:'Tu nombre *', namePh:'Ej. Ana',
+      timeLbl:'Hora', statusLbl:'Estado *', optOperational:'Operativo', optProblem:'Un problema',
+      sev:'¿Qué problema tiene?', sevNoFunciona:'No funciona', sevAMedias:'Funciona a medias', sevLeve:'Problema leve',
+      notesLbl:'Notas', notesPh:'Agrega detalles (opcional)', notesPhReq:'Describe el problema',
+      photos:'Fotos (opcional)', send:'Enviar', sending:'Enviando…',
+      okReport:'¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
+      okOperational:'¡Gracias! Este equipo se marcó como operativo.',
       fail:'No se pudo enviar', net:'Error de red: ' }}
   }};
   let LANG = 'en';
@@ -332,7 +360,17 @@ $@"<div class=""card"">
     document.getElementById('flag-es').classList.toggle('active', LANG==='es');
     document.documentElement.lang = LANG;
     try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
+    onStatus();
   }}
+  function isProblem() {{ const r = document.querySelector('input[name=estado]:checked'); return !!r && r.value === 'problem'; }}
+  function onStatus() {{
+    const p = isProblem();
+    document.getElementById('problemFields').style.display = p ? 'block' : 'none';
+    const ta = document.querySelector('textarea[name=descripcion]');
+    ta.required = p;
+    ta.placeholder = p ? I18N[LANG].notesPhReq : I18N[LANG].notesPh;
+  }}
+  function updNow() {{ const el = document.getElementById('now'); if (el) el.value = new Date().toLocaleString(); }}
 
   const f = document.getElementById('f');
   const btn = document.getElementById('btn');
@@ -340,13 +378,22 @@ $@"<div class=""card"">
   f.addEventListener('submit', async (e) => {{
     e.preventDefault();
     const d = I18N[LANG];
+    const problem = isProblem();
     btn.disabled = true; btn.textContent = d.sending; msg.innerHTML = '';
-    const fd = new FormData(f);
-    fd.append('codigo', {codigoJs});
     try {{
-      const r = await fetch('/api/public/' + encodeURIComponent({slugJs}) + '/reports', {{ method:'POST', body: fd }});
-      if (r.status === 201) {{
-        vSuccess(d.ok);
+      let r;
+      if (problem) {{
+        const fd = new FormData(f);
+        fd.append('codigo', CODE);
+        r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/reports', {{ method:'POST', body: fd }});
+      }} else {{
+        const fd = new FormData();
+        fd.append('reportadoPor', f.reportadoPor.value);
+        fd.append('nota', f.descripcion.value);
+        r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST', body: fd }});
+      }}
+      if (r.ok) {{
+        vSuccess(problem ? d.okReport : d.okOperational);
       }} else {{
         const t = await r.text();
         msg.innerHTML = '<div class=""err"">'+d.fail+' ('+r.status+'). '+t+'</div>';
@@ -358,10 +405,11 @@ $@"<div class=""card"">
     }}
   }});
 
-  // Inglés por default; respeta la última elección del usuario si existe.
+  updNow();
   let init = 'en';
   try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
   setLang(init);
+  onStatus();
 </script>";
         return Layout($"Reportar {codigoH}", inner, "fill");
     }
@@ -373,8 +421,6 @@ $@"<div class=""card"">
         var codigoH = WebUtility.HtmlEncode(codigo);
         var slugUrl = Uri.EscapeDataString(slug);
         var codigoUrl = Uri.EscapeDataString(codigo);
-        var slugJs = JsonSerializer.Serialize(slug);
-        var codigoJs = JsonSerializer.Serialize(codigo);
 
         var inner =
 $@"<div class=""card"">
@@ -394,30 +440,17 @@ $@"<div class=""card"">
     <!-- Logo placeholder de Valentino's (una V elegante). Reemplazar por el logo real. -->
     <div class=""logo""><span>V</span></div>
     <h1 style=""margin:0"">{tenantH}</h1>
-    <div class=""muted"" data-i18n=""prompt"">Is this equipment working?</div>
+    <div class=""muted"" data-i18n=""prompt"">Report this equipment's status</div>
     <div class=""badge"">{tipoH} · {codigoH}</div>
   </div>
 
-  <button type=""button"" class=""btn-report"" onclick=""markOperational()"" data-i18n=""operational"">It's working</button>
-  <a class=""btn-outline"" href=""/r/{slugUrl}/{codigoUrl}/reportar"" data-i18n=""reportProblem"">Report a problem</a>
-  <div id=""msg""></div>
+  <a class=""btn-report"" href=""/r/{slugUrl}/{codigoUrl}/reportar"" data-i18n=""report"">Report</a>
 </div>
 <script>
-  const SLUG = {slugJs};
-  const CODE = {codigoJs};
   const I18N = {{
-    en: {{ prompt:'Is this equipment working?', operational:""It's working"", reportProblem:'Report a problem',
-      opOk:'Thanks! This equipment was marked as operational.' }},
-    es: {{ prompt:'¿Este equipo está funcionando?', operational:'Está funcionando', reportProblem:'Reportar un problema',
-      opOk:'¡Gracias! Este equipo se marcó como operativo.' }}
+    en: {{ prompt:""Report this equipment's status"", report:'Report' }},
+    es: {{ prompt:'Reporta el estado de este equipo', report:'Reportar' }}
   }};
-  async function markOperational() {{
-    const d = I18N[LANG];
-    try {{
-      await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST' }});
-    }} catch (e) {{}}
-    vSuccess(d.opOk);
-  }}
   let LANG = 'en';
   function setLang(l) {{
     LANG = I18N[l] ? l : 'en';
