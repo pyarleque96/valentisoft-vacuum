@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Valentinos.Application.Assets;
+using Valentinos.Infrastructure.Assets;
 using Valentinos.Infrastructure.Persistence;
 
 namespace Valentinos.Infrastructure;
@@ -11,6 +13,7 @@ public static class DependencyInjection
     {
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(connectionString));
+        services.AddScoped<IAssetService, AssetService>();
         return services;
     }
 }
