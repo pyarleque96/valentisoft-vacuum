@@ -19,40 +19,63 @@ public class DemoController : ControllerBase
     private readonly IQrRenderer _qr;
     private readonly ILogger<DemoController> _logger;
     private readonly Valentinos.Application.Notifications.IEmailSender _email;
+    private readonly Valentinos.Application.Reports.IReportService _reports;
 
     public DemoController(AppDbContext db, IQrRenderer qr, ILogger<DemoController> logger,
-        Valentinos.Application.Notifications.IEmailSender email)
+        Valentinos.Application.Notifications.IEmailSender email,
+        Valentinos.Application.Reports.IReportService reports)
     {
         _db = db;
         _qr = qr;
         _logger = logger;
         _email = email;
+        _reports = reports;
     }
 
     // Check-in de estado "operativo": el housekeeper confirma que el equipo funciona.
     // Se registra en el log y se envía el correo (plantilla operativa, en inglés).
+    // Check-in unificado de estado (operativo / con fallas / fuera de servicio / sin
+    // aspiradora). Registra el check-in (KPIs) y, si es un problema, crea el Report (fotos).
     [HttpPost("/api/public/{slug}/assets/{codigo}/operational")]
     public async Task<IActionResult> MarkOperational(string slug, string codigo,
-        [FromForm] string? reportadoPor, [FromForm] string? nota, [FromForm] string? estado)
+        [FromForm] string? reportadoPor, [FromForm] string? nota, [FromForm] string? estado,
+        [FromForm] IFormFileCollection? fotos)
     {
         var (tenant, asset, _) = await ResolveAsync(slug, codigo);
         if (tenant is null || asset is null) return NotFound();
 
         var estadoKey = string.IsNullOrWhiteSpace(estado) ? "operational" : estado;
+        var by = string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor;
 
         // Persistir el check-in (alimenta la página de KPIs).
         _db.StatusCheckins.Add(new Domain.Entities.StatusCheckin
         {
-            EmployeeName = string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor,
-            AssetCodigo = asset.Codigo,
-            EstadoKey = estadoKey,
-            Nota = nota
+            EmployeeName = by, AssetCodigo = asset.Codigo, EstadoKey = estadoKey, Nota = nota
         });
         await _db.SaveChangesAsync();
 
+        // Si es un problema, crear el Report (guarda fotos; dispara email si estuviera activo).
+        if ((estadoKey is "AMedias" or "NoFunciona")
+            && Enum.TryParse<Domain.Enums.Severidad>(estadoKey, out var sev))
+        {
+            var photos = new List<Valentinos.Application.Reports.ReportPhotoInput>();
+            foreach (var f in fotos ?? (IFormFileCollection)new FormFileCollection())
+            {
+                if (f.Length <= 0 || f.Length > 5 * 1024 * 1024) continue;
+                using var ms = new MemoryStream();
+                await f.CopyToAsync(ms);
+                photos.Add(new Valentinos.Application.Reports.ReportPhotoInput(ms.ToArray(), f.ContentType));
+            }
+            try
+            {
+                await _reports.CreateReportAsync(new Valentinos.Application.Reports.CreateReportRequest(
+                    asset.Codigo, string.IsNullOrWhiteSpace(nota) ? "-" : nota, sev, null, by, photos));
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Fallo al crear Report del check-in"); }
+        }
+
         _logger.LogInformation("✅ CHECK-IN {Estado}: {Codigo} ({Tenant}) por {Por}. Nota: {Nota}",
-            estadoKey, asset.Codigo, tenant.Nombre,
-            string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor,
+            estadoKey, asset.Codigo, tenant.Nombre, by,
             string.IsNullOrWhiteSpace(nota) ? "-" : nota);
 
         // Correo de check-in operativo (mismo canal/config de email que los reportes).
@@ -182,6 +205,68 @@ public class DemoController : ControllerBase
         var html = Valentinos.Infrastructure.Notifications.EmailChannel.RenderOperationalPreview(
             "MasterCorp", "VAC-001", "Ana", "Cleaned filter, working fine.", DateTime.Now.ToString("g"));
         return Content(html, "text/html; charset=utf-8");
+    }
+
+    // ---------- Página de KPIs / reportes (ligada al tenant) ----------
+    private async Task<(Domain.Entities.Tenant? tenant, List<Kpi.KpiCheckin> checkins)> LoadCheckinsAsync(string slug)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return (null, new List<Kpi.KpiCheckin>());
+        var since = DateTime.Now.Date.AddDays(-29);
+        var list = await _db.StatusCheckins.IgnoreQueryFilters()
+            .Where(c => c.TenantId == tenant.Id && c.CreatedAt >= since)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new Kpi.KpiCheckin(c.EmployeeName, c.AssetCodigo, c.EstadoKey, c.Nota, c.CreatedAt))
+            .ToListAsync();
+        return (tenant, list);
+    }
+
+    [HttpGet("/reports/{slug}")]
+    public async Task<IActionResult> KpiPage(string slug)
+    {
+        var (tenant, list) = await LoadCheckinsAsync(slug);
+        if (tenant is null) return NotFound();
+        var model = Kpi.Kpi.Compute(tenant.Nombre, list, DateTime.Now);
+        return Content(Kpi.KpiHtml.Render(model, slug), "text/html; charset=utf-8");
+    }
+
+    // Previsualización del PDF del reporte (mismo contenido que la página / el adjunto).
+    [HttpGet("/reports/{slug}/pdf")]
+    public async Task<IActionResult> KpiPdfPreview(string slug)
+    {
+        var (tenant, list) = await LoadCheckinsAsync(slug);
+        if (tenant is null) return NotFound();
+        var model = Kpi.Kpi.Compute(tenant.Nombre, list, DateTime.Now);
+        return File(Kpi.KpiPdf.Render(model), "application/pdf");
+    }
+
+    // Genera el reporte diario y lo envía por correo con el PDF adjunto (acción manual).
+    [HttpPost("/reports/{slug}/generate")]
+    public async Task<IActionResult> KpiGenerate(string slug)
+    {
+        var (tenant, list) = await LoadCheckinsAsync(slug);
+        if (tenant is null) return NotFound();
+
+        var model = Kpi.Kpi.Compute(tenant.Nombre, list, DateTime.Now);
+        var pdf = Kpi.KpiPdf.Render(model);
+        var to = Valentinos.Infrastructure.Notifications.EmailChannel.Recipients(tenant);
+        if (to.Length == 0) return Ok(new { to = (string?)null });
+
+        var subject = $"[Valentino's] Daily report generated · {tenant.Nombre}";
+        var body =
+            $"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#334155;font-size:14px;\">" +
+            $"<h2 style=\"color:#1560A8;\">Daily report generated</h2>" +
+            $"<p>The daily KPI report for <b>{WebUtility.HtmlEncode(tenant.Nombre)}</b> has been generated on {model.GeneratedAt:g}.</p>" +
+            $"<p>Today — Operational: {model.DOperational} · With faults: {model.DFaults} · Out of service: {model.DOutOfService} · No vacuum: {model.DUnavailable} · Total: {model.DTotal}.</p>" +
+            $"<p>The full report is attached as a PDF.</p></div>";
+        var att = new Valentinos.Application.Notifications.EmailAttachment(
+            pdf, $"KPI-Report-{DateTime.Now:yyyy-MM-dd}.pdf", "application/pdf");
+
+        try { await _email.SendAsync(to, subject, body, isHtml: true, attachment: att); }
+        catch (Exception ex) { _logger.LogError(ex, "Fallo al enviar reporte diario"); return StatusCode(500, new { error = "email failed" }); }
+
+        _logger.LogInformation("📄 Reporte diario generado y enviado a {To} (PDF {Bytes} bytes)", string.Join(", ", to), pdf.Length);
+        return Ok(new { to = string.Join(", ", to) });
     }
 
     // Landing de demo: muestra el QR y el enlace del formulario para el activo semilla.
@@ -494,24 +579,15 @@ $@"<div class=""card"">
   f.addEventListener('submit', async (e) => {{
     e.preventDefault();
     const d = I18N[LANG];
+    const val = estadoVal();
     const problem = isProblem();
     btn.disabled = true; btn.textContent = d.sending; msg.innerHTML = '';
     try {{
-      let r;
-      if (problem) {{
-        const fd = new FormData(f);
-        fd.append('codigo', CODE);
-        fd.append('severidad', estadoVal()); // AMedias | NoFunciona
-        r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/reports', {{ method:'POST', body: fd }});
-      }} else {{
-        const fd = new FormData();
-        fd.append('reportadoPor', f.reportadoPor.value);
-        fd.append('nota', f.descripcion.value);
-        fd.append('estado', estadoVal()); // operational | unavailable
-        r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST', body: fd }});
-      }}
+      const fd = new FormData(f);          // reportadoPor, descripcion, fotos, estado (radio)
+      fd.append('nota', f.descripcion.value);
+      const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST', body: fd }});
       if (r.ok) {{
-        vSuccess(problem ? d.okReport : (estadoVal() === 'unavailable' ? d.okUnavailable : d.okOperational));
+        vSuccess(problem ? d.okReport : (val === 'unavailable' ? d.okUnavailable : d.okOperational));
       }} else {{
         const t = await r.text();
         msg.innerHTML = '<div class=""err"">'+d.fail+' ('+r.status+'). '+t+'</div>';

@@ -21,7 +21,7 @@ public class NotificationServiceTests
         public int Calls;
         public List<string> LastTo = new();
         public Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
-            CancellationToken ct = default)
+            EmailAttachment? attachment = null, CancellationToken ct = default)
         {
             Calls++;
             LastTo = to.ToList();

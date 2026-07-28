@@ -43,25 +43,64 @@ public static class DemoSeeder
             await db.SaveChangesAsync();
         }
 
-        var existeActivo = await db.Assets.AnyAsync(a => a.AssetTypeId == tipo.Id);
-        if (!existeActivo)
+        // Sembrar hasta 12 aspiradoras (VAC-001..VAC-012).
+        var nAssets = await db.Assets.CountAsync(a => a.AssetTypeId == tipo.Id);
+        for (var i = nAssets; i < 12; i++)
         {
-            tipo.CorrelativoActual += 1; // -> 1
+            tipo.CorrelativoActual += 1;
             db.Assets.Add(new Asset
             {
                 AssetTypeId = tipo.Id,
-                Codigo = $"{tipo.Prefijo}-{tipo.CorrelativoActual:D3}", // VAC-001
-                Estado = AssetEstado.Activo,
-                Ubicacion = "Piso 1"
+                Codigo = $"{tipo.Prefijo}-{tipo.CorrelativoActual:D3}",
+                Estado = AssetEstado.Activo
             });
-            await db.SaveChangesAsync();
         }
+        await db.SaveChangesAsync();
 
         // Empleados de MasterCorp (para el autocompletar del formulario).
         if (!await db.Employees.AnyAsync())
         {
             foreach (var nombre in Empleados)
                 db.Employees.Add(new Employee { Nombre = nombre });
+            await db.SaveChangesAsync();
+        }
+
+        // Data FAKE de check-ins del último mes (para la página de KPIs).
+        if (!await db.StatusCheckins.AnyAsync())
+        {
+            var codes = await db.Assets.Select(a => a.Codigo).OrderBy(c => c).ToListAsync();
+            var faults = new[] { "Low suction", "Damaged cable", "Won't turn on", "Broken wheel", "Overheating", "Strange noise" };
+            var weights = new[] { ("operational", 66), ("AMedias", 12), ("NoFunciona", 7), ("unavailable", 15) };
+            var totalW = weights.Sum(w => w.Item2);
+            var rnd = new Random(20260728);
+            var list = new List<StatusCheckin>();
+
+            for (var d = 0; d < 30; d++)
+            {
+                var day = DateTime.Now.Date.AddDays(-d);
+                var perDay = rnd.Next(8, 16);
+                for (var k = 0; k < perDay; k++)
+                {
+                    // Selección ponderada de estado.
+                    var pick = rnd.Next(totalW);
+                    var acc = 0; var est = "operational";
+                    foreach (var (key, w) in weights) { acc += w; if (pick < acc) { est = key; break; } }
+
+                    var isProblem = est is "AMedias" or "NoFunciona";
+                    // Sesgo: VAC-007 falla más.
+                    var code = (isProblem && rnd.Next(3) == 0) ? "VAC-007" : codes[rnd.Next(codes.Count)];
+
+                    list.Add(new StatusCheckin
+                    {
+                        EmployeeName = Empleados[rnd.Next(Empleados.Length)],
+                        AssetCodigo = code,
+                        EstadoKey = est,
+                        Nota = isProblem ? faults[rnd.Next(faults.Length)] : null,
+                        CreatedAt = day.AddHours(rnd.Next(6, 20)).AddMinutes(rnd.Next(60))
+                    });
+                }
+            }
+            db.StatusCheckins.AddRange(list);
             await db.SaveChangesAsync();
         }
     }

@@ -26,7 +26,7 @@ public class EmailChannel : INotificationChannel
         if (to.Length == 0) return;
         var (sevLabel, sevColor) = Severity(n.Severidad);
         var html = BuildIssueHtml(tenant.Nombre, n, sevLabel, sevColor, CidLogo);
-        await _sender.SendAsync(to, IssueSubject(n.AssetCodigo, sevLabel), html, isHtml: true, ct);
+        await _sender.SendAsync(to, IssueSubject(n.AssetCodigo, sevLabel), html, isHtml: true, ct: ct);
     }
 
     public static string[] Recipients(Tenant tenant)

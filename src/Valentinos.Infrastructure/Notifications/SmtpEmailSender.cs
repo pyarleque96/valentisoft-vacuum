@@ -18,7 +18,7 @@ public class SmtpEmailSender : IEmailSender
     }
 
     public async Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
-        CancellationToken ct = default)
+        EmailAttachment? attachment = null, CancellationToken ct = default)
     {
         // Apagado por default: sin SMTP configurado no se intenta enviar (no-op seguro).
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Host) || to.Count == 0)
@@ -36,6 +36,12 @@ public class SmtpEmailSender : IEmailSender
         if (!string.IsNullOrWhiteSpace(_options.Cc))
             foreach (var cc in _options.Cc.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 message.CC.Add(cc);
+
+        if (attachment is not null)
+        {
+            var stream = new MemoryStream(attachment.Content);
+            message.Attachments.Add(new Attachment(stream, attachment.FileName, attachment.ContentType));
+        }
 
         if (isHtml)
         {

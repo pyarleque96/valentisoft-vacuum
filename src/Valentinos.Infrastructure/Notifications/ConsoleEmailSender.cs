@@ -12,11 +12,12 @@ public class ConsoleEmailSender : IEmailSender
     public ConsoleEmailSender(ILogger<ConsoleEmailSender> logger) => _logger = logger;
 
     public Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
-        CancellationToken ct = default)
+        EmailAttachment? attachment = null, CancellationToken ct = default)
     {
+        var att = attachment is null ? "" : $" · adjunto: {attachment.FileName} ({attachment.Content.Length} bytes)";
         _logger.LogInformation(
-            "\n========== 📧 EMAIL (demo{Html}) ==========\nPara: {To}\nAsunto: {Subject}\n{Body}\n=====================================",
-            isHtml ? " · HTML" : "", string.Join(", ", to), subject, body);
+            "\n========== 📧 EMAIL (demo{Html}{Att}) ==========\nPara: {To}\nAsunto: {Subject}\n{Body}\n=====================================",
+            isHtml ? " · HTML" : "", att, string.Join(", ", to), subject, body);
         return Task.CompletedTask;
     }
 }
