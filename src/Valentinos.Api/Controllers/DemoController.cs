@@ -58,23 +58,46 @@ public class DemoController : ControllerBase
 
     // Página pública de reporte que abre el QR. HTML autocontenido; postea al
     // endpoint público existente POST /api/public/{slug}/reports.
+    // Página de bienvenida que abre el QR: logo de Valentino's + botón para reportar.
     [HttpGet("/r/{slug}/{codigo}")]
-    public async Task<IActionResult> ReportForm(string slug, string codigo)
+    public async Task<IActionResult> Intro(string slug, string codigo)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == slug);
+        var (tenant, asset, tipo) = await ResolveAsync(slug, codigo);
         if (tenant is null) return NotFound();
-
-        var asset = await _db.Assets.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(a => a.TenantId == tenant.Id && a.Codigo == codigo);
         if (asset is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
 
-        var tipo = await _db.AssetTypes.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Id == asset.AssetTypeId);
+        return Content(IntroHtml(tenant.Nombre, slug, codigo, tipo?.Nombre ?? "Activo"),
+            "text/html; charset=utf-8");
+    }
+
+    // Formulario de reporte (se llega desde el botón de la página de bienvenida).
+    [HttpGet("/r/{slug}/{codigo}/reportar")]
+    public async Task<IActionResult> ReportForm(string slug, string codigo)
+    {
+        var (tenant, asset, tipo) = await ResolveAsync(slug, codigo);
+        if (tenant is null) return NotFound();
+        if (asset is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
 
         return Content(FormHtml(tenant.Nombre, slug, codigo, tipo?.Nombre ?? "Activo"),
             "text/html; charset=utf-8");
     }
+
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Asset? asset, Domain.Entities.AssetType? tipo)>
+        ResolveAsync(string slug, string codigo)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return (null, null, null);
+
+        var asset = await _db.Assets.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(a => a.TenantId == tenant.Id && a.Codigo == codigo);
+        if (asset is null) return (tenant, null, null);
+
+        var tipo = await _db.AssetTypes.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == asset.AssetTypeId);
+        return (tenant, asset, tipo);
+    }
+
 
     // Landing de demo: muestra el QR y el enlace del formulario para el activo semilla.
     [HttpGet("/demo/{slug}")]
@@ -130,6 +153,22 @@ $@"<!doctype html>
   .flag:hover {{ opacity:.85; }}
   .flag.active {{ opacity:1; box-shadow:0 0 0 2px #22c55e; }}
   .flag img {{ display:block; border-radius:999px; }}
+  .hero {{ text-align:center; padding:20px 0 8px; }}
+  /* Placeholder del logo de Valentino's: una V elegante. Reemplazar por el logo real. */
+  .logo {{ width:120px; height:120px; margin:8px auto 18px; border-radius:50%;
+           display:flex; align-items:center; justify-content:center;
+           background:radial-gradient(circle at 32% 28%, #123047, #0b1f30 70%);
+           border:1px solid rgba(148,163,184,.25);
+           box-shadow:0 12px 34px rgba(2,8,20,.55), inset 0 1px 0 rgba(255,255,255,.06); }}
+  .logo span {{ font-family: Georgia, 'Times New Roman', 'Playfair Display', serif;
+           font-style: italic; font-weight: 700; font-size: 76px; line-height:1;
+           background:linear-gradient(180deg,#e9d9a7,#c9a24b);
+           -webkit-background-clip:text; background-clip:text; color:transparent;
+           text-shadow:0 1px 1px rgba(0,0,0,.25); letter-spacing:1px;
+           padding-right:6px; /* balance visual de la itálica */ }}
+  a.btn-report {{ display:block; text-decoration:none; text-align:center; margin-top:22px;
+    padding:16px; border-radius:12px; background:#22c55e; color:#052e16;
+    font-weight:800; font-size:17px; }}
 </style>
 </head>
 <body><div class=""wrap"">{bodyInner}</div></body>
@@ -239,6 +278,60 @@ $@"<div class=""card"">
   setLang(init);
 </script>";
         return Layout($"Reportar {codigoH}", inner);
+    }
+
+    private static string IntroHtml(string tenantNombre, string slug, string codigo, string tipoNombre)
+    {
+        var tenantH = WebUtility.HtmlEncode(tenantNombre);
+        var tipoH = WebUtility.HtmlEncode(tipoNombre);
+        var codigoH = WebUtility.HtmlEncode(codigo);
+        var slugUrl = Uri.EscapeDataString(slug);
+        var codigoUrl = Uri.EscapeDataString(codigo);
+
+        var inner =
+$@"<div class=""card"">
+  <div class=""top"">
+    <div></div>
+    <div class=""langs"">
+      <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')"">
+        <img src=""/images/flags/us-circle.svg"" alt=""English"" width=""26"" height=""26"">
+      </button>
+      <button type=""button"" class=""flag"" id=""flag-es"" title=""Español"" onclick=""setLang('es')"">
+        <img src=""/images/flags/es-circle.svg"" alt=""Español"" width=""26"" height=""26"">
+      </button>
+    </div>
+  </div>
+
+  <div class=""hero"">
+    <!-- Logo placeholder de Valentino's (una V elegante). Reemplazar por el logo real. -->
+    <div class=""logo""><span>V</span></div>
+    <h1 style=""margin:0"">{tenantH}</h1>
+    <div class=""muted"" data-i18n=""prompt"">Found a problem with this equipment?</div>
+    <div class=""badge"">{tipoH} · {codigoH}</div>
+  </div>
+
+  <a class=""btn-report"" href=""/r/{slugUrl}/{codigoUrl}/reportar"" data-i18n=""report"">Report a breakdown</a>
+</div>
+<script>
+  const I18N = {{
+    en: {{ prompt:'Found a problem with this equipment?', report:'Report a breakdown' }},
+    es: {{ prompt:'¿Este equipo tiene un problema?', report:'Reportar avería' }}
+  }};
+  let LANG = 'en';
+  function setLang(l) {{
+    LANG = I18N[l] ? l : 'en';
+    const d = I18N[LANG];
+    document.querySelectorAll('[data-i18n]').forEach(el => {{ const k = el.getAttribute('data-i18n'); if (d[k]) el.textContent = d[k]; }});
+    document.getElementById('flag-en').classList.toggle('active', LANG==='en');
+    document.getElementById('flag-es').classList.toggle('active', LANG==='es');
+    document.documentElement.lang = LANG;
+    try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
+  }}
+  let init = 'en';
+  try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
+  setLang(init);
+</script>";
+        return Layout($"{tenantNombre} · {codigo}", inner);
     }
 
     private static string LandingHtml(string tenantNombre, string slug, List<string> assets, string baseUrl)
