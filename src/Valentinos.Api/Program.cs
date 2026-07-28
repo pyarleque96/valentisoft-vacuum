@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Api.Multitenancy;
 using Valentinos.Application.Abstractions;
+using Valentinos.Application.Notifications;
 using Valentinos.Infrastructure;
+using Valentinos.Infrastructure.Notifications;
 using Valentinos.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,6 +15,11 @@ builder.Services.AddScoped<ITenantContext, TenantContext>();
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Falta la cadena de conexión 'Default'.");
 builder.Services.AddInfrastructure(connectionString, builder.Configuration);
+
+// En desarrollo/demo, las alertas de email se imprimen en la consola en vez de
+// enviarse por SMTP (sobrescribe el IEmailSender registrado por AddInfrastructure).
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddScoped<IEmailSender, ConsoleEmailSender>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -42,6 +49,13 @@ if (!app.Environment.IsEnvironment("Testing"))
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db);
+
+    // Datos de demo (solo Development): tipo Aspiradora (VAC) + activo VAC-001.
+    if (app.Environment.IsDevelopment())
+    {
+        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+        await DemoSeeder.SeedAsync(db, tenantContext, "pedroyarleque96@gmail.com");
+    }
 }
 
 app.Run();

@@ -17,9 +17,10 @@ public class SkiaQrRenderer : IQrRenderer
         => $"{_options.BaseUrl.TrimEnd('/')}/r/{slug}/{codigo}";
 
     public byte[] RenderPng(QrRenderRequest req)
-    {
-        var url = BuildUrl(req.Slug, req.Codigo);
+        => RenderPngForUrl(BuildUrl(req.Slug, req.Codigo), req.Codigo, req.LogoPng);
 
+    public byte[] RenderPngForUrl(string url, string codeLabel, byte[]? logoPng)
+    {
         // 1) Matriz del QR con máxima corrección de errores (tolera el logo central).
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.H);
@@ -47,9 +48,9 @@ public class SkiaQrRenderer : IQrRenderer
         }
 
         // 3) Logo central opcional con recuadro blanco de respaldo (~22% del lado).
-        if (req.LogoPng is { Length: > 0 })
+        if (logoPng is { Length: > 0 })
         {
-            using var logo = SKBitmap.Decode(req.LogoPng);
+            using var logo = SKBitmap.Decode(logoPng);
             if (logo is not null)
             {
                 var logoSide = (int)(side * 0.22);
@@ -72,7 +73,7 @@ public class SkiaQrRenderer : IQrRenderer
         using (var font = new SKFont(SKTypeface.FromFamilyName("Arial") ?? SKTypeface.Default, 34))
         {
             var baseline = side + (LabelHeight + 24) / 2f + 8;
-            canvas.DrawText(req.Codigo, side / 2f, baseline, SKTextAlign.Center, font, textPaint);
+            canvas.DrawText(codeLabel, side / 2f, baseline, SKTextAlign.Center, font, textPaint);
         }
 
         canvas.Flush();
