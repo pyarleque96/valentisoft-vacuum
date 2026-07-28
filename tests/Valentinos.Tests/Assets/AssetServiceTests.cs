@@ -70,4 +70,32 @@ public class AssetServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => svc.CreateAssetAsync(new CreateAssetRequest(Guid.NewGuid(), null)));
     }
+
+    [Fact]
+    public async Task ListAssetsAsync_OrdenaPorCreacionNoLexicalmente_MasAllaDe999()
+    {
+        var (db, svc) = Build(Guid.NewGuid());
+        var tipo = await svc.CreateAssetTypeAsync(new CreateAssetTypeRequest("Aspiradora", "VAC"));
+
+        // Forzamos el correlativo a 998 para que los siguientes activos crucen la
+        // frontera de 3 a 4 dígitos (VAC-999 -> VAC-1000 -> VAC-1001).
+        var tipoEntity = await db.AssetTypes.SingleAsync(t => t.Id == tipo.Id);
+        tipoEntity.CorrelativoActual = 998;
+        await db.SaveChangesAsync();
+
+        var a999 = await svc.CreateAssetAsync(new CreateAssetRequest(tipo.Id, null));
+        var a1000 = await svc.CreateAssetAsync(new CreateAssetRequest(tipo.Id, null));
+        var a1001 = await svc.CreateAssetAsync(new CreateAssetRequest(tipo.Id, null));
+
+        Assert.Equal("VAC-999", a999.Codigo);
+        Assert.Equal("VAC-1000", a1000.Codigo);
+        Assert.Equal("VAC-1001", a1001.Codigo);
+
+        var lista = await svc.ListAssetsAsync();
+
+        // Orden de creación esperado. Bajo el orden lexical anterior (OrderBy(Codigo))
+        // el resultado habría sido VAC-1000, VAC-1001, VAC-999, porque "1" < "9"
+        // en comparación de cadenas.
+        Assert.Equal(new[] { "VAC-999", "VAC-1000", "VAC-1001" }, lista.Select(a => a.Codigo));
+    }
 }

@@ -57,7 +57,7 @@ public class AssetService : IAssetService
     }
 
     public async Task<IReadOnlyList<AssetDto>> ListAssetsAsync(CancellationToken ct = default)
-        => await _db.Assets.OrderBy(a => a.Codigo)
+        => await _db.Assets.OrderBy(a => a.CreatedAt).ThenBy(a => a.Codigo)
             .Select(a => ToDto(a)).ToListAsync(ct);
 
     private static AssetTypeDto ToDto(AssetType t)

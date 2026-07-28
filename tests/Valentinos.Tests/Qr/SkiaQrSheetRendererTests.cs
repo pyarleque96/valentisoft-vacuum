@@ -37,4 +37,30 @@ public class SkiaQrSheetRendererTests
         var pdf = sheet.RenderPdf(new List<QrSheetItem>());
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(pdf, 0, 5));
     }
+
+    [Fact]
+    public void RenderPdf_MasDeUnaPagina_ProduceUnPdfValidoYMasGrandeQueUnaSolaPagina()
+    {
+        var sheet = Build();
+
+        var unaPagina = new List<QrSheetItem>
+        {
+            new("mastercorp", "VAC-001", null),
+            new("mastercorp", "VAC-002", null),
+            new("mastercorp", "VAC-003", null),
+            new("mastercorp", "VAC-004", null),
+        };
+
+        // La grilla es 3x4 = 12 por página; 13 items fuerza una segunda página.
+        var dosPaginas = Enumerable.Range(1, 13)
+            .Select(i => new QrSheetItem("mastercorp", $"VAC-{i:D3}", null))
+            .ToList();
+
+        var pdfUnaPagina = sheet.RenderPdf(unaPagina);
+        var pdfDosPaginas = sheet.RenderPdf(dosPaginas);
+
+        Assert.Equal("%PDF-", Encoding.ASCII.GetString(pdfDosPaginas, 0, 5));
+        Assert.True(pdfDosPaginas.Length > pdfUnaPagina.Length,
+            "El PDF de dos páginas debería ser más grande que el de una sola página.");
+    }
 }

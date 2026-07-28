@@ -7,7 +7,6 @@ namespace Valentinos.Infrastructure.Qr;
 public class SkiaQrRenderer : IQrRenderer
 {
     private const int ModulePixels = 12;   // tamaño de cada módulo del QR en px
-    private const int QuietModules = 4;     // margen "quiet zone" en módulos
     private const int LabelHeight = 64;     // franja inferior para el código impreso
 
     private readonly QrOptions _options;
