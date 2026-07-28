@@ -1,4 +1,6 @@
+using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Qr;
@@ -128,11 +130,18 @@ $@"<!doctype html>
 
     private static string FormHtml(string tenantNombre, string slug, string codigo, string tipoNombre)
     {
+        // Contexto HTML: HtmlEncode. Contexto JS: JsonSerializer + encodeURIComponent.
+        var tenantH = WebUtility.HtmlEncode(tenantNombre);
+        var tipoH = WebUtility.HtmlEncode(tipoNombre);
+        var codigoH = WebUtility.HtmlEncode(codigo);
+        var slugJs = JsonSerializer.Serialize(slug);
+        var codigoJs = JsonSerializer.Serialize(codigo);
+
         var inner =
 $@"<div class=""card"">
   <h1>Reportar avería</h1>
-  <div class=""muted"">{tenantNombre} · Housekeeping</div>
-  <div class=""badge"">{tipoNombre} · {codigo}</div>
+  <div class=""muted"">{tenantH} · Housekeeping</div>
+  <div class=""badge"">{tipoH} · {codigoH}</div>
 
   <form id=""f"">
     <label>¿Qué le pasa al equipo? *</label>
@@ -166,9 +175,9 @@ $@"<div class=""card"">
     e.preventDefault();
     btn.disabled = true; btn.textContent = 'Enviando…'; msg.innerHTML = '';
     const fd = new FormData(f);
-    fd.append('codigo', {System.Text.Json.JsonSerializer.Serialize(codigo)});
+    fd.append('codigo', {codigoJs});
     try {{
-      const r = await fetch('/api/public/{slug}/reports', {{ method:'POST', body: fd }});
+      const r = await fetch('/api/public/' + encodeURIComponent({slugJs}) + '/reports', {{ method:'POST', body: fd }});
       if (r.status === 201) {{
         f.style.display='none';
         msg.innerHTML = '<div class=""ok"">✅ ¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.</div>';
@@ -183,33 +192,37 @@ $@"<div class=""card"">
     }}
   }});
 </script>";
-        return Layout($"Reportar {codigo}", inner);
+        return Layout($"Reportar {codigoH}", inner);
     }
 
     private static string LandingHtml(string tenantNombre, string slug, List<string> assets, string baseUrl)
     {
         var baseParam = Uri.EscapeDataString(baseUrl);
+        var slugUrl = Uri.EscapeDataString(slug);   // segmento de URL
+        var tenantH = WebUtility.HtmlEncode(tenantNombre);
         var sb = new StringBuilder();
-        sb.Append($@"<div class=""card""><h1>Demo — {tenantNombre}</h1>
+        sb.Append($@"<div class=""card""><h1>Demo — {tenantH}</h1>
 <div class=""muted"">Escanea el QR con tu celular para abrir el formulario de reporte.</div>");
         foreach (var codigo in assets)
         {
+            var codigoUrl = Uri.EscapeDataString(codigo);      // segmento de URL
+            var codigoH = WebUtility.HtmlEncode(codigo);       // texto/atributo HTML
             sb.Append($@"<div style=""margin-top:20px;text-align:center"">
-  <div class=""badge"">{codigo}</div><br>
-  <img class=""qr"" src=""/api/public/{slug}/assets/{codigo}/qr.png?base={baseParam}"" alt=""QR {codigo}"">
+  <div class=""badge"">{codigoH}</div><br>
+  <img class=""qr"" src=""/api/public/{slugUrl}/assets/{codigoUrl}/qr.png?base={baseParam}"" alt=""QR {codigoH}"">
   <div class=""muted"" style=""margin-top:8px"">
-    <a href=""/r/{slug}/{codigo}"">/r/{slug}/{codigo}</a>
+    <a href=""/r/{slugUrl}/{codigoUrl}"">/r/{codigoH}</a>
   </div>
 </div>");
         }
         if (assets.Count == 0)
             sb.Append(@"<p class=""muted"">No hay activos sembrados todavía.</p>");
         sb.Append("</div>");
-        return Layout($"Demo {tenantNombre}", sb.ToString());
+        return Layout($"Demo {tenantH}", sb.ToString());
     }
 
     private static string NotFoundHtml(string codigo) =>
         Layout("No encontrado",
             $@"<div class=""card""><h1>Activo no encontrado</h1>
-<div class=""muted"">No existe un activo con código <code>{codigo}</code> para este cliente.</div></div>");
+<div class=""muted"">No existe un activo con código <code>{WebUtility.HtmlEncode(codigo)}</code> para este cliente.</div></div>");
 }
