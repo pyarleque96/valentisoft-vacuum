@@ -4,13 +4,13 @@
 
 **Goal:** Levantar la solución backend .NET con EF Core + SQL Server, la entidad Tenant, resolución de tenant por slug de URL, aislamiento multitenant vía global query filter, y seed del tenant MasterCorp — todo verificable con un endpoint `whoami`.
 
-**Architecture:** Solución .NET 9 en 4 proyectos por capas (Api, Domain, Application, Infrastructure) + proyecto de tests. El tenant actual del request se resuelve en un middleware a partir del slug de la ruta (`/r/{slug}/...` y `/api/public/{slug}/...`) y se expone vía `ITenantContext`. EF Core aplica un global query filter por `TenantId` para que ningún query de negocio se ejecute sin filtrar.
+**Architecture:** Solución .NET 10 en 4 proyectos por capas (Api, Domain, Application, Infrastructure) + proyecto de tests. El tenant actual del request se resuelve en un middleware a partir del slug de la ruta (`/r/{slug}/...` y `/api/public/{slug}/...`) y se expone vía `ITenantContext`. EF Core aplica un global query filter por `TenantId` para que ningún query de negocio se ejecute sin filtrar.
 
-**Tech Stack:** .NET 9, ASP.NET Core Web API (controllers), EF Core 9, SQL Server, xUnit, Microsoft.AspNetCore.Mvc.Testing.
+**Tech Stack:** .NET 10, ASP.NET Core Web API (controllers), EF Core 10, SQL Server, xUnit, Microsoft.AspNetCore.Mvc.Testing.
 
 ## Global Constraints
 
-- Target framework: **net9.0** en todos los proyectos.
+- Target framework: **net10.0** en todos los proyectos.
 - Base de datos: **SQL Server** (LocalDB en desarrollo: `Server=(localdb)\\MSSQLLocalDB;Database=Valentinos;Trusted_Connection=True;TrustServerCertificate=True`).
 - Toda entidad de negocio incluye `TenantId` (Guid) y hereda de una base común.
 - Namespaces con raíz `Valentinos.*`.
@@ -40,11 +40,11 @@ Ejecutar desde la raíz del repo (`C:/Users/pdro4/sources/IA/Ramces/Valentinos`)
 
 ```bash
 dotnet new sln -n Valentinos
-dotnet new classlib -n Valentinos.Domain -o src/Valentinos.Domain -f net9.0
-dotnet new classlib -n Valentinos.Application -o src/Valentinos.Application -f net9.0
-dotnet new classlib -n Valentinos.Infrastructure -o src/Valentinos.Infrastructure -f net9.0
-dotnet new webapi -n Valentinos.Api -o src/Valentinos.Api -f net9.0 --use-controllers
-dotnet new xunit -n Valentinos.Tests -o tests/Valentinos.Tests -f net9.0
+dotnet new classlib -n Valentinos.Domain -o src/Valentinos.Domain -f net10.0
+dotnet new classlib -n Valentinos.Application -o src/Valentinos.Application -f net10.0
+dotnet new classlib -n Valentinos.Infrastructure -o src/Valentinos.Infrastructure -f net10.0
+dotnet new webapi -n Valentinos.Api -o src/Valentinos.Api -f net10.0 --use-controllers
+dotnet new xunit -n Valentinos.Tests -o tests/Valentinos.Tests -f net10.0
 ```
 
 Borrar los archivos `Class1.cs` que crean los classlib:
@@ -878,4 +878,4 @@ git commit -m "feat: wire-up de API, migración inicial, seed MasterCorp y endpo
 
 **Placeholders:** ninguno pendiente; el único "primer test provisional" del Task 3 se reemplaza explícitamente por la versión definitiva en el Step 5 del mismo task.
 
-**Notas de entorno:** requiere .NET 9 SDK, `dotnet-ef` global, y SQL Server LocalDB para el arranque real (los tests no lo requieren: usan InMemory).
+**Notas de entorno:** requiere .NET 10 SDK, `dotnet-ef` global, y SQL Server LocalDB para el arranque real (los tests no lo requieren: usan InMemory).

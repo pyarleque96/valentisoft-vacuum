@@ -34,7 +34,7 @@ equipo está averiado. La plataforma es **multitenant**; el primer cliente es
 | Primer tenant | **MasterCorp**, tipo Aspiradora con prefijo `VAC`. |
 | Multitenancy | **BD compartida + `TenantId`** con global query filter de EF Core. |
 | Frontend | **React** (Vite + TypeScript). |
-| Backend | **.NET 9** (ASP.NET Core Web API). |
+| Backend | **.NET 10** (ASP.NET Core Web API). |
 | Códigos de activo | **Tipos con prefijo autogenerado** (VAC-001, VAC-002…). |
 | Campos del reporte | Descripción, Foto(s), Severidad, Ubicación/Piso. |
 | Panel admin MVP | Ciclo de vida de reporte, KPIs, CRUD activos/tipos, gestión usuarios. |
@@ -44,7 +44,7 @@ equipo está averiado. La plataforma es **multitenant**; el primer cliente es
 
 ## 3. Arquitectura
 
-Backend **.NET 9 ASP.NET Core Web API** + frontend **React (Vite + TS)**.
+Backend **.NET 10 ASP.NET Core Web API** + frontend **React (Vite + TS)**.
 
 El frontend sirve dos experiencias:
 - **Página pública de reporte**: ruta `/r/:tenant/:codigo` — sin login, ligera,
@@ -136,7 +136,7 @@ activos que más fallan, MTTR del periodo).
 
 ## 8. Stack técnico
 
-- **Backend**: .NET 9, EF Core, SQL Server, Hangfire, QRCoder, SkiaSharp, ASP.NET
+- **Backend**: .NET 10, EF Core, SQL Server, Hangfire, QRCoder, SkiaSharp, ASP.NET
   Identity + JWT, xUnit.
 - **Frontend**: React + Vite + TypeScript, Tailwind + shadcn/ui, Recharts.
 - **Calidad**: TDD en lógica de negocio (generación de códigos, filtros de tenant,
