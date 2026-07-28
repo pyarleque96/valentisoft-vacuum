@@ -117,7 +117,7 @@ public class DemoController : ControllerBase
             "text/html; charset=utf-8");
     }
 
-    private static string Layout(string title, string bodyInner) =>
+    private static string Layout(string title, string bodyInner, string wrapClass = "") =>
 $@"<!doctype html>
 <html lang=""es"">
 <head>
@@ -127,8 +127,17 @@ $@"<!doctype html>
 <style>
   :root {{ color-scheme: light dark; }}
   body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
+         min-height: 100vh; min-height: 100dvh; display: flex;
          background: #0f172a; color: #e2e8f0; }}
-  .wrap {{ max-width: 560px; margin: 0 auto; padding: 24px 18px 64px; }}
+  /* margin:auto centra vertical y horizontalmente; si el contenido es más alto
+     que la pantalla, los márgenes colapsan y hace scroll sin recortar. */
+  .wrap {{ max-width: 560px; width: 100%; margin: auto; padding: 24px 18px;
+          box-sizing: border-box; }}
+  /* Variante 'fill': ocupa todo el alto y ancla el botón de enviar al fondo. */
+  .wrap.fill {{ margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }}
+  .wrap.fill > .card {{ flex: 1; display: flex; flex-direction: column; }}
+  .wrap.fill form {{ display: flex; flex-direction: column; flex: 1; }}
+  .wrap.fill form button[type=""submit""] {{ margin-top: auto; }}
   .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 22px; }}
   h1 {{ font-size: 20px; margin: 0 0 4px; }}
   .muted {{ color: #94a3b8; font-size: 14px; }}
@@ -171,7 +180,7 @@ $@"<!doctype html>
     font-weight:800; font-size:17px; }}
 </style>
 </head>
-<body><div class=""wrap"">{bodyInner}</div></body>
+<body><div class=""wrap {wrapClass}"">{bodyInner}</div></body>
 </html>";
 
     private static string FormHtml(string tenantNombre, string slug, string codigo, string tipoNombre)
@@ -277,7 +286,7 @@ $@"<div class=""card"">
   try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
   setLang(init);
 </script>";
-        return Layout($"Reportar {codigoH}", inner);
+        return Layout($"Reportar {codigoH}", inner, "fill");
     }
 
     private static string IntroHtml(string tenantNombre, string slug, string codigo, string tipoNombre)
