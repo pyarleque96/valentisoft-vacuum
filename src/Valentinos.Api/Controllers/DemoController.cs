@@ -211,9 +211,10 @@ $@"<!doctype html>
   .wrap.fill > .card {{ flex: 1; display: flex; flex-direction: column; }}
   .wrap.fill form {{ display: flex; flex-direction: column; flex: 1; }}
   .wrap.fill form button[type=""submit""] {{ margin-top: auto; }}
-  /* Gap mínimo garantizado antes del botón (sea notas o fotos el último campo). */
-  .wrap.fill form textarea {{ margin-bottom: 20px; }}
+  /* Gap antes del botón cuando fotos es el último campo (modo problema). */
   .wrap.fill form #problemFields {{ margin-bottom: 20px; }}
+  /* En modo operativo (notas último), el margen lo agrega onStatus(). */
+  .wrap.fill form.op textarea {{ margin-bottom: 20px; }}
   .card {{ background: #ffffff; border: 1px solid #e5e9f0; border-radius: 16px; padding: 22px;
           box-shadow: 0 10px 30px rgba(15,23,42,.06); }}
   h1 {{ font-size: 20px; margin: 0 0 4px; color:#2b3440; }}
@@ -276,9 +277,9 @@ $@"<!doctype html>
     color:#334155; transition:border-color .15s, background .15s; }}
   .seg input {{ width:auto; margin:0; accent-color:#1560A8; }}
   .seg:has(input:checked) {{ border-color:#1560A8; background:#eef4fb; color:#0f4c85; }}
-  /* Estados apilados, pegados, con punto de color al final del label. */
-  .statuslist {{ display:flex; flex-direction:column; gap:6px; }}
-  .stat {{ display:flex; align-items:center; gap:12px; cursor:pointer; font-size:15px; font-weight:600;
+  /* Estados apilados (cajas separadas), poco espacio vertical entre ellos. */
+  .statuslist {{ display:flex; flex-direction:column; gap:8px; }}
+  .stat {{ display:flex; align-items:center; gap:12px; margin:0; cursor:pointer; font-size:15px; font-weight:600;
     color:#334155; border:1px solid #cbd5e1; border-radius:10px; padding:12px 14px; }}
   .stat input {{ width:auto; margin:0; accent-color:#1560A8; flex:0 0 auto; }}
   .stat span {{ flex:1; }}
@@ -427,6 +428,7 @@ $@"<div class=""card"">
   function onStatus() {{
     const p = isProblem();
     document.getElementById('problemFields').style.display = p ? 'block' : 'none';
+    document.getElementById('f').classList.toggle('op', !p); // modo operativo -> margen de notas
     const ta = document.querySelector('textarea[name=descripcion]');
     ta.required = p;
     ta.placeholder = p ? I18N[LANG].notesPhReq : I18N[LANG].notesPh;
