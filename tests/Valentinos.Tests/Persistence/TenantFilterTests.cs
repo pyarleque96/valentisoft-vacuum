@@ -44,12 +44,20 @@ public class TenantFilterTests
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
 
-        // Semilla con ambos tenants (filtro desactivado escribiendo TenantId explícito)
-        var seedCtx = new FakeTenantContext();
-        using (var db = new TestDbContext(options, seedCtx))
+        // Semilla realista: cada tenant escribe sus propias filas bajo su contexto.
+        var ctxA = new FakeTenantContext();
+        ctxA.Set(tenantA);
+        using (var db = new TestDbContext(options, ctxA))
         {
-            db.Widgets.Add(new Widget { TenantId = tenantA, Nombre = "A" });
-            db.Widgets.Add(new Widget { TenantId = tenantB, Nombre = "B" });
+            db.Widgets.Add(new Widget { Nombre = "A" });
+            db.SaveChanges();
+        }
+
+        var ctxB = new FakeTenantContext();
+        ctxB.Set(tenantB);
+        using (var db = new TestDbContext(options, ctxB))
+        {
+            db.Widgets.Add(new Widget { Nombre = "B" });
             db.SaveChanges();
         }
 
@@ -62,6 +70,36 @@ public class TenantFilterTests
             Assert.Single(visibles);
             Assert.Equal("A", visibles[0].Nombre);
         }
+    }
+
+    [Fact]
+    public void SaveChanges_SinTenantEnContexto_LanzaExcepcion()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+
+        var ctx = new FakeTenantContext(); // sin tenant
+        using var db = new TestDbContext(options, ctx);
+        db.Widgets.Add(new Widget { Nombre = "SinContexto" });
+
+        Assert.Throws<InvalidOperationException>(() => db.SaveChanges());
+    }
+
+    [Fact]
+    public void SaveChanges_TenantExplicitoAjeno_LanzaExcepcion()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+
+        var tenantActual = Guid.NewGuid();
+        var otroTenant = Guid.NewGuid();
+        var ctx = new FakeTenantContext();
+        ctx.Set(tenantActual);
+
+        using var db = new TestDbContext(options, ctx);
+        db.Widgets.Add(new Widget { TenantId = otroTenant, Nombre = "Ajeno" });
+
+        Assert.Throws<UnauthorizedAccessException>(() => db.SaveChanges());
     }
 
     [Fact]
