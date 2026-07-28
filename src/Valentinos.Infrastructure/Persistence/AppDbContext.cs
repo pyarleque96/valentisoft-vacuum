@@ -19,6 +19,8 @@ public class AppDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<AssetType> AssetTypes => Set<AssetType>();
     public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<Report> Reports => Set<Report>();
+    public DbSet<ReportPhoto> ReportPhotos => Set<ReportPhoto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +49,30 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(a => a.AssetTypeId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Report>(e =>
+        {
+            e.Property(r => r.Descripcion).HasMaxLength(2000).IsRequired();
+            e.Property(r => r.Ubicacion).HasMaxLength(200);
+            e.Property(r => r.ReportadoPor).HasMaxLength(200);
+            e.Property(r => r.Notas).HasMaxLength(2000);
+            e.HasIndex(r => new { r.TenantId, r.AssetId });
+            e.HasOne<Asset>()
+             .WithMany()
+             .HasForeignKey(r => r.AssetId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReportPhoto>(e =>
+        {
+            e.Property(p => p.FileKey).HasMaxLength(400).IsRequired();
+            e.Property(p => p.ContentType).HasMaxLength(100).IsRequired();
+            e.HasIndex(p => p.ReportId);
+            e.HasOne<Report>()
+             .WithMany()
+             .HasForeignKey(p => p.ReportId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Global query filter por TenantId para toda entidad ITenantOwned
