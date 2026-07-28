@@ -198,10 +198,10 @@ $@"<!doctype html>
 <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
 <title>{title}</title>
 <style>
-  :root {{ color-scheme: light dark; }}
+  :root {{ color-scheme: light; }}
   body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
          min-height: 100vh; min-height: 100dvh; display: flex;
-         background: #0f172a; color: #e2e8f0; }}
+         background: #eef1f5; color: #334155; }}
   /* margin:auto centra vertical y horizontalmente; si el contenido es más alto
      que la pantalla, los márgenes colapsan y hace scroll sin recortar. */
   .wrap {{ max-width: 560px; width: 100%; margin: auto; padding: 24px 18px;
@@ -211,65 +211,83 @@ $@"<!doctype html>
   .wrap.fill > .card {{ flex: 1; display: flex; flex-direction: column; }}
   .wrap.fill form {{ display: flex; flex-direction: column; flex: 1; }}
   .wrap.fill form button[type=""submit""] {{ margin-top: auto; }}
-  /* Gap mínimo garantizado entre el último campo (notas) y el botón. */
+  /* Gap mínimo garantizado antes del botón (sea notas o fotos el último campo). */
   .wrap.fill form textarea {{ margin-bottom: 20px; }}
-  .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 22px; }}
-  h1 {{ font-size: 20px; margin: 0 0 4px; }}
-  .muted {{ color: #94a3b8; font-size: 14px; }}
-  .badge {{ display:inline-block; background:#334155; color:#e2e8f0; border-radius:999px;
-           padding:4px 12px; font-weight:600; font-size:14px; margin-top:8px; }}
-  label {{ display:block; font-size:14px; margin:16px 0 6px; font-weight:600; }}
+  .wrap.fill form #problemFields {{ margin-bottom: 20px; }}
+  .card {{ background: #ffffff; border: 1px solid #e5e9f0; border-radius: 16px; padding: 22px;
+          box-shadow: 0 10px 30px rgba(15,23,42,.06); }}
+  h1 {{ font-size: 20px; margin: 0 0 4px; color:#2b3440; }}
+  .muted {{ color: #64748b; font-size: 14px; }}
+  .badge {{ display:inline-block; background:#eaf1f9; color:#1560A8; border-radius:999px;
+           padding:5px 12px; font-weight:700; font-size:14px; margin-top:8px; }}
+  label {{ display:block; font-size:14px; margin:16px 0 6px; font-weight:600; color:#334155; }}
   input, textarea, select {{ width:100%; box-sizing:border-box; padding:12px; border-radius:10px;
-    border:1px solid #475569; background:#0f172a; color:#e2e8f0; font-size:16px; }}
+    border:1px solid #cbd5e1; background:#ffffff; color:#1f2937; font-size:16px; }}
+  input::placeholder, textarea::placeholder {{ color:#9aa6b2; }}
+  input:focus, textarea:focus, select:focus {{ outline:none; border-color:#1560A8; box-shadow:0 0 0 3px rgba(21,96,168,.15); }}
   textarea {{ min-height:96px; resize:vertical; }}
   button {{ margin-top:22px; width:100%; padding:14px; border:0; border-radius:12px;
-    background:#22c55e; color:#052e16; font-weight:800; font-size:16px; cursor:pointer; }}
+    background:#1560A8; color:#ffffff; font-weight:800; font-size:16px; cursor:pointer; }}
+  button:hover {{ background:#0f4c85; }}
   button:disabled {{ opacity:.6; cursor:progress; }}
-  .ok {{ background:#052e16; border:1px solid #16a34a; color:#bbf7d0; padding:14px; border-radius:12px; margin-top:16px; }}
-  .err {{ background:#450a0a; border:1px solid #dc2626; color:#fecaca; padding:14px; border-radius:12px; margin-top:16px; }}
-  img.qr {{ width: 260px; max-width: 80%; height:auto; background:#fff; border-radius:12px; padding:8px; }}
-  a {{ color:#7dd3fc; }}
-  code {{ background:#0f172a; padding:2px 6px; border-radius:6px; }}
+  .ok {{ background:#eaf7ee; border:1px solid #16a34a; color:#166534; padding:14px; border-radius:12px; margin-top:16px; }}
+  .err {{ background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; padding:14px; border-radius:12px; margin-top:16px; }}
+  img.qr {{ width: 260px; max-width: 80%; height:auto; background:#fff; border-radius:12px; padding:8px; border:1px solid #e5e9f0; }}
+  a {{ color:#1560A8; }}
+  code {{ background:#f1f5f9; padding:2px 6px; border-radius:6px; }}
   .top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }}
   .langs {{ display:flex; gap:6px; flex:0 0 auto; }}
   .flag {{ padding:2px; background:transparent; border:0; width:auto; margin:0; cursor:pointer;
            border-radius:999px; line-height:0; opacity:.45; transition:opacity .15s, box-shadow .15s; }}
   .flag:hover {{ opacity:.85; }}
-  .flag.active {{ opacity:1; box-shadow:0 0 0 2px #22c55e; }}
+  .flag.active {{ opacity:1; box-shadow:0 0 0 2px #1560A8; }}
   .flag img {{ display:block; border-radius:999px; }}
   .hero {{ text-align:center; padding:20px 0 8px; }}
   /* Logo real de Valentino's (solo la V) recortado en círculo. */
   .logo {{ width:124px; height:124px; margin:8px auto 16px; border-radius:50%;
            background-image:url(/images/brand/valentinos-v.jpg);
            background-repeat:no-repeat; background-size:112%; background-position:50% 46%;
-           border:1px solid rgba(148,163,184,.28);
-           box-shadow:0 12px 34px rgba(2,8,20,.55), inset 0 1px 0 rgba(255,255,255,.05); }}
+           border:1px solid #e5e9f0; box-shadow:0 10px 26px rgba(15,23,42,.18); }}
   .btn-report {{ display:block; width:100%; box-sizing:border-box; text-decoration:none; text-align:center;
-    margin-top:22px; padding:16px; border:0; border-radius:12px; background:#22c55e; color:#052e16;
+    margin-top:22px; padding:16px; border:0; border-radius:12px; background:#1560A8; color:#ffffff;
     font-weight:800; font-size:17px; cursor:pointer; }}
+  .btn-report:hover {{ background:#0f4c85; }}
   a.btn-outline {{ display:block; text-decoration:none; text-align:center; margin-top:12px;
-    padding:15px; border-radius:12px; background:transparent; border:1px solid #475569; color:#e2e8f0;
+    padding:15px; border-radius:12px; background:transparent; border:1px solid #cbd5e1; color:#334155;
     font-weight:700; font-size:15px; }}
-  a.btn-outline:hover {{ border-color:#64748b; background:rgba(148,163,184,.08); }}
-  input.ro {{ color:#94a3b8; }}
+  a.btn-outline:hover {{ border-color:#94a3b8; background:#f1f5f9; }}
+  input.ro {{ color:#64748b; }}
   /* Autocompletar personalizado (dropdown propio, confiable en móvil). */
   .ac {{ position:relative; }}
   .ac-list {{ position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
-    background:#0f172a; border:1px solid #475569; border-radius:10px; max-height:230px;
-    overflow-y:auto; display:none; box-shadow:0 12px 30px rgba(2,8,20,.5); }}
+    background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; max-height:230px;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain;
+    display:none; box-shadow:0 12px 30px rgba(15,23,42,.15); }}
   .ac-list.open {{ display:block; }}
-  .ac-item {{ padding:12px 14px; cursor:pointer; font-size:15px; color:#e2e8f0;
-    border-bottom:1px solid #1e293b; }}
+  .ac-item {{ padding:12px 14px; cursor:pointer; font-size:15px; color:#334155;
+    border-bottom:1px solid #eef2f6; }}
   .ac-item:last-child {{ border-bottom:0; }}
-  .ac-item.active, .ac-item:hover {{ background:rgba(34,197,94,.14); color:#dcfce7; }}
+  .ac-item.active, .ac-item:hover {{ background:#eef4fb; color:#0f4c85; }}
   .ac-empty {{ padding:12px 14px; color:#94a3b8; font-size:14px; }}
   /* Selector Operational / A problem en una sola línea (radios excluyentes). */
   .segbar {{ display:flex; gap:10px; }}
   .seg {{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;
-    border:1px solid #475569; border-radius:10px; padding:12px; font-size:15px; font-weight:600;
-    transition:border-color .15s, background .15s; }}
-  .seg input {{ width:auto; margin:0; accent-color:#22c55e; }}
-  .seg:has(input:checked) {{ border-color:#22c55e; background:rgba(34,197,94,.10); color:#dcfce7; }}
+    border:1px solid #cbd5e1; border-radius:10px; padding:12px; font-size:15px; font-weight:600;
+    color:#334155; transition:border-color .15s, background .15s; }}
+  .seg input {{ width:auto; margin:0; accent-color:#1560A8; }}
+  .seg:has(input:checked) {{ border-color:#1560A8; background:#eef4fb; color:#0f4c85; }}
+  /* Estados apilados, pegados, con punto de color al final del label. */
+  .statuslist {{ display:flex; flex-direction:column; gap:6px; }}
+  .stat {{ display:flex; align-items:center; gap:12px; cursor:pointer; font-size:15px; font-weight:600;
+    color:#334155; border:1px solid #cbd5e1; border-radius:10px; padding:12px 14px; }}
+  .stat input {{ width:auto; margin:0; accent-color:#1560A8; flex:0 0 auto; }}
+  .stat span {{ flex:1; }}
+  .stat .dot {{ width:18px; height:18px; border-radius:50%; flex:0 0 auto;
+    box-shadow:0 0 0 3px rgba(15,23,42,.05); }}
+  .dot-green {{ background:#16a34a; }}
+  .dot-amber {{ background:#f59e0b; }}
+  .dot-red {{ background:#ef4444; }}
+  .stat:has(input:checked) {{ border-color:#1560A8; background:#eef4fb; }}
   /* Confirmación de envío estilo Material: onda verde + check animado. */
   .success {{ text-align:center; padding:28px 0 12px; }}
   .ck {{ position:relative; width:100px; height:100px; margin:0 auto 16px; border-radius:50%;
@@ -283,7 +301,7 @@ $@"<!doctype html>
   @keyframes ck-pop {{ from {{ transform:scale(0); }} to {{ transform:scale(1); }} }}
   @keyframes ck-draw {{ to {{ stroke-dashoffset:0; }} }}
   @keyframes ck-wave {{ from {{ transform:scale(.6); opacity:.5; }} to {{ transform:scale(2.3); opacity:0; }} }}
-  .msg-ok {{ color:#dcfce7; font-weight:600; font-size:16px; max-width:340px; margin:0 auto; }}
+  .msg-ok {{ color:#334155; font-weight:600; font-size:16px; max-width:340px; margin:0 auto; }}
   .success .badge {{ margin-top:16px; }}
   /* Cuando el reporte/estado se completa, el contenido se centra verticalmente. */
   .card.done {{ justify-content:center; }}
@@ -355,25 +373,19 @@ $@"<div class=""card"">
     </div>
 
     <label data-i18n=""statusLbl"">Status *</label>
-    <div class=""segbar"">
-      <label class=""seg""><input type=""radio"" name=""estado"" value=""operational"" checked onchange=""onStatus()""> <span data-i18n=""optOperational"">Operational</span></label>
-      <label class=""seg""><input type=""radio"" name=""estado"" value=""problem"" onchange=""onStatus()""> <span data-i18n=""optProblem"">A problem</span></label>
-    </div>
-
-    <div id=""problemFields"" style=""display:none"">
-      <label data-i18n=""sev"">What's the problem?</label>
-      <select name=""severidad"">
-        <option value=""NoFunciona"" selected data-i18n=""sevNoFunciona"">Not working</option>
-        <option value=""AMedias"" data-i18n=""sevAMedias"">Partially working</option>
-        <option value=""Leve"" data-i18n=""sevLeve"">Minor issue</option>
-      </select>
-
-      <label data-i18n=""photos"">Photos (optional)</label>
-      <input type=""file"" name=""fotos"" accept=""image/*"" multiple>
+    <div class=""statuslist"">
+      <label class=""stat""><input type=""radio"" name=""estado"" value=""operational"" checked onchange=""onStatus()""> <span data-i18n=""stOperativa"">Operational</span> <b class=""dot dot-green""></b></label>
+      <label class=""stat""><input type=""radio"" name=""estado"" value=""AMedias"" onchange=""onStatus()""> <span data-i18n=""stFallas"">Working with faults</span> <b class=""dot dot-amber""></b></label>
+      <label class=""stat""><input type=""radio"" name=""estado"" value=""NoFunciona"" onchange=""onStatus()""> <span data-i18n=""stFuera"">Out of service</span> <b class=""dot dot-red""></b></label>
     </div>
 
     <label data-i18n=""notesLbl"">Notes</label>
     <textarea name=""descripcion"" data-i18n-ph=""notesPh"" placeholder=""Add any details (optional)""></textarea>
+
+    <div id=""problemFields"" style=""display:none"">
+      <label data-i18n=""photos"">Photos (optional)</label>
+      <input type=""file"" name=""fotos"" accept=""image/*"" multiple>
+    </div>
 
     <button type=""submit"" id=""btn"" data-i18n=""send"">Send</button>
   </form>
@@ -384,16 +396,14 @@ $@"<div class=""card"">
   const CODE = {codigoJs};
   const I18N = {{
     en: {{ title:'Report', sub:'Housekeeping', name:'Employee *', namePh:'Start typing your name…',
-      timeLbl:'Time', statusLbl:'Status *', optOperational:'Operational', optProblem:'A problem',
-      sev:""What's the problem?"", sevNoFunciona:'Not working', sevAMedias:'Partially working', sevLeve:'Minor issue',
+      statusLbl:'Status *', stOperativa:'Operational', stFallas:'Working with faults', stFuera:'Out of service',
       notesLbl:'Notes', notesPh:'Add any details (optional)', notesPhReq:'Describe the problem',
       photos:'Photos (optional)', send:'Send', sending:'Sending…',
       okReport:'Report sent! Thank you. The maintenance team has been notified.',
       okOperational:'Thanks! This equipment was marked as operational.',
       fail:""Couldn't send"", net:'Network error: ' }},
     es: {{ title:'Reportar', sub:'Housekeeping', name:'Empleado *', namePh:'Empieza a escribir tu nombre…',
-      timeLbl:'Hora', statusLbl:'Estado *', optOperational:'Operativo', optProblem:'Un problema',
-      sev:'¿Qué problema tiene?', sevNoFunciona:'No funciona', sevAMedias:'Funciona a medias', sevLeve:'Problema leve',
+      statusLbl:'Estado *', stOperativa:'Operativa', stFallas:'Funciona con fallas', stFuera:'Fuera de servicio',
       notesLbl:'Notas', notesPh:'Agrega detalles (opcional)', notesPhReq:'Describe el problema',
       photos:'Fotos (opcional)', send:'Enviar', sending:'Enviando…',
       okReport:'¡Reporte enviado! Gracias. El equipo de mantenimiento fue avisado.',
@@ -412,7 +422,8 @@ $@"<div class=""card"">
     try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
     onStatus();
   }}
-  function isProblem() {{ const r = document.querySelector('input[name=estado]:checked'); return !!r && r.value === 'problem'; }}
+  function estadoVal() {{ const r = document.querySelector('input[name=estado]:checked'); return r ? r.value : 'operational'; }}
+  function isProblem() {{ return estadoVal() !== 'operational'; }}
   function onStatus() {{
     const p = isProblem();
     document.getElementById('problemFields').style.display = p ? 'block' : 'none';
@@ -437,12 +448,13 @@ $@"<div class=""card"">
     if (!inp || !box) return;
     inp.addEventListener('focus', function () {{ acRender(inp.value); }});
     inp.addEventListener('input', function () {{ acRender(inp.value); }});
-    // pointerdown cubre mouse y touch; preventDefault evita el blur antes del tap.
-    box.addEventListener('pointerdown', function (e) {{
+    // Seleccionar con 'click': el tap real dispara click, pero un swipe (scroll)
+    // NO dispara click, así que se puede scrollear la lista sin seleccionar.
+    box.addEventListener('click', function (e) {{
       const it = e.target.closest('.ac-item'); if (!it) return;
-      e.preventDefault();
       inp.value = it.getAttribute('data-v');
       box.classList.remove('open');
+      inp.blur();
     }});
     document.addEventListener('click', function (e) {{
       if (!e.target.closest('.ac')) box.classList.remove('open');
@@ -469,6 +481,7 @@ $@"<div class=""card"">
       if (problem) {{
         const fd = new FormData(f);
         fd.append('codigo', CODE);
+        fd.append('severidad', estadoVal()); // AMedias | NoFunciona
         r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/reports', {{ method:'POST', body: fd }});
       }} else {{
         const fd = new FormData();

@@ -31,8 +31,13 @@ public static class DemoSeeder
         var tipo = await db.AssetTypes.FirstOrDefaultAsync(t => t.Prefijo == "VAC");
         if (tipo is null)
         {
-            tipo = AssetType.Create("Aspiradora", "VAC");
+            tipo = AssetType.Create("Vacuum", "VAC");
             db.AssetTypes.Add(tipo);
+            await db.SaveChangesAsync();
+        }
+        else if (tipo.Nombre != "Vacuum") // renombrar el tipo a inglés
+        {
+            tipo.Nombre = "Vacuum";
             await db.SaveChangesAsync();
         }
 
