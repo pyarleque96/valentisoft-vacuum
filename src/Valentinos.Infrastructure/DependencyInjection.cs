@@ -3,10 +3,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Valentinos.Application.Assets;
 using Valentinos.Application.Qr;
+using Valentinos.Application.Reports;
 using Valentinos.Application.Storage;
 using Valentinos.Infrastructure.Assets;
 using Valentinos.Infrastructure.Persistence;
 using Valentinos.Infrastructure.Qr;
+using Valentinos.Infrastructure.Reports;
 using Valentinos.Infrastructure.Storage;
 
 namespace Valentinos.Infrastructure;
@@ -31,6 +33,8 @@ public static class DependencyInjection
         configuration?.GetSection("FileStorage").Bind(fileStorageOptions);
         services.AddSingleton(fileStorageOptions);
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+
+        services.AddScoped<IReportService, ReportService>();
 
         return services;
     }
