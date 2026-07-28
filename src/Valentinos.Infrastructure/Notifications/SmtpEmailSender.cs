@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 using Microsoft.Extensions.Logging;
 using Valentinos.Application.Notifications;
 
@@ -28,13 +29,35 @@ public class SmtpEmailSender : IEmailSender
         var from = string.IsNullOrWhiteSpace(_options.From) ? _options.User : _options.From;
         var fromName = string.IsNullOrWhiteSpace(_options.FromName) ? "Valentino's" : _options.FromName;
 
-        using var message = new MailMessage { From = new MailAddress(from, fromName), Subject = subject, Body = body, IsBodyHtml = isHtml };
+        using var message = new MailMessage { From = new MailAddress(from, fromName), Subject = subject };
         foreach (var addr in to) message.To.Add(addr);
 
         // Copia (CC), configurable — separada por comas.
         if (!string.IsNullOrWhiteSpace(_options.Cc))
             foreach (var cc in _options.Cc.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 message.CC.Add(cc);
+
+        if (isHtml)
+        {
+            // Vista HTML + logo incrustado por Content-ID (cid:vlogo) para que se
+            // vea aunque el cliente bloquee imágenes externas.
+            var htmlView = AlternateView.CreateAlternateViewFromString(body, null, MediaTypeNames.Text.Html);
+            if (!string.IsNullOrWhiteSpace(_options.InlineLogoPath) && File.Exists(_options.InlineLogoPath))
+            {
+                var logo = new LinkedResource(_options.InlineLogoPath, new ContentType("image/jpeg"))
+                {
+                    ContentId = "vlogo",
+                    TransferEncoding = TransferEncoding.Base64
+                };
+                htmlView.LinkedResources.Add(logo);
+            }
+            message.AlternateViews.Add(htmlView);
+        }
+        else
+        {
+            message.Body = body;
+            message.IsBodyHtml = false;
+        }
 
         using var client = new SmtpClient(_options.Host, _options.Port)
         {

@@ -49,5 +49,33 @@ public static class DemoSeeder
             });
             await db.SaveChangesAsync();
         }
+
+        // Empleados de MasterCorp (para el autocompletar del formulario).
+        if (!await db.Employees.AnyAsync())
+        {
+            foreach (var nombre in Empleados)
+                db.Employees.Add(new Employee { Nombre = nombre });
+            await db.SaveChangesAsync();
+        }
     }
+
+    private static readonly string[] Empleados =
+    {
+        "Castillo Carbajal, Leticia J",
+        "Ffrench, Dothlyn",
+        "Gutierrez Flores, Helen A",
+        "Gutierrez, Damaris",
+        "Hernandez Quijada, Rodrigo Salvador",
+        "Jacobo Figueroa, Maira",
+        "Jeronimo Gonzalez, Jennifer",
+        "Lalin Marin, Heidy N",
+        "Lopez Solano, Delma",
+        "Martinez de Delgado, Mayra",
+        "Rivera Chavez, Deysi",
+        "Rodriguez Reyes, Maria",
+        "Rosales Solis, Sergio",
+        "Ruano Arroyo, Yecsenia",
+        "Rueda Beltran, Diana",
+        "Wilson, Kenroy"
+    };
 }

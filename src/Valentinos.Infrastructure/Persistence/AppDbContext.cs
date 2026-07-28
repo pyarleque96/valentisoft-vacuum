@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<ReportPhoto> ReportPhotos => Set<ReportPhoto>();
+    public DbSet<Employee> Employees => Set<Employee>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +51,12 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(a => a.AssetTypeId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Employee>(e =>
+        {
+            e.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => new { x.TenantId, x.Nombre });
         });
 
         modelBuilder.Entity<Report>(e =>

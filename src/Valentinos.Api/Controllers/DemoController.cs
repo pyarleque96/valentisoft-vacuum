@@ -49,7 +49,7 @@ public class DemoController : ControllerBase
             var to = Valentinos.Infrastructure.Notifications.EmailChannel.Recipients(tenant);
             if (to.Length > 0)
             {
-                var html = Valentinos.Infrastructure.Notifications.EmailChannel.BuildOperationalHtml(
+                var html = Valentinos.Infrastructure.Notifications.EmailChannel.OperationalEmailHtml(
                     tenant.Nombre, asset.Codigo, reportadoPor, nota, DateTime.Now.ToString("g"));
                 var subject = Valentinos.Infrastructure.Notifications.EmailChannel.OperationalSubject(asset.Codigo);
                 try { await _email.SendAsync(to, subject, html, isHtml: true); }
@@ -134,6 +134,22 @@ public class DemoController : ControllerBase
         return (tenant, asset, tipo);
     }
 
+
+    // Lista de empleados del tenant (para el autocompletar del formulario).
+    [HttpGet("/api/public/{slug}/employees")]
+    public async Task<IActionResult> Employees(string slug)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return NotFound();
+
+        var names = await _db.Employees.IgnoreQueryFilters()
+            .Where(e => e.TenantId == tenant.Id)
+            .OrderBy(e => e.Nombre)
+            .Select(e => e.Nombre)
+            .ToListAsync();
+        return Ok(names);
+    }
 
     // Previsualización del correo (demo): plantilla de ISSUE (en inglés).
     [HttpGet("/demo/email-preview")]
@@ -223,7 +239,7 @@ $@"<!doctype html>
   /* Logo real de Valentino's (solo la V) recortado en círculo. */
   .logo {{ width:124px; height:124px; margin:8px auto 16px; border-radius:50%;
            background-image:url(/images/brand/valentinos-v.jpg);
-           background-repeat:no-repeat; background-size:150%; background-position:50% 46%;
+           background-repeat:no-repeat; background-size:112%; background-position:50% 46%;
            border:1px solid rgba(148,163,184,.28);
            box-shadow:0 12px 34px rgba(2,8,20,.55), inset 0 1px 0 rgba(255,255,255,.05); }}
   .btn-report {{ display:block; width:100%; box-sizing:border-box; text-decoration:none; text-align:center;
@@ -319,8 +335,9 @@ $@"<div class=""card"">
   <div class=""badge"">{tipoH} · {codigoH}</div>
 
   <form id=""f"">
-    <label data-i18n=""name"">Your name *</label>
-    <input name=""reportadoPor"" required data-i18n-ph=""namePh"" placeholder=""e.g. Ana"">
+    <label data-i18n=""name"">Employee *</label>
+    <input name=""reportadoPor"" required list=""employees"" autocomplete=""off"" data-i18n-ph=""namePh"" placeholder=""Start typing your name…"">
+    <datalist id=""employees""></datalist>
 
     <label data-i18n=""timeLbl"">Time</label>
     <input id=""now"" class=""ro"" readonly>
@@ -354,7 +371,7 @@ $@"<div class=""card"">
   const SLUG = {slugJs};
   const CODE = {codigoJs};
   const I18N = {{
-    en: {{ title:'Report', sub:'Housekeeping', name:'Your name *', namePh:'e.g. Ana',
+    en: {{ title:'Report', sub:'Housekeeping', name:'Employee *', namePh:'Start typing your name…',
       timeLbl:'Time', statusLbl:'Status *', optOperational:'Operational', optProblem:'A problem',
       sev:""What's the problem?"", sevNoFunciona:'Not working', sevAMedias:'Partially working', sevLeve:'Minor issue',
       notesLbl:'Notes', notesPh:'Add any details (optional)', notesPhReq:'Describe the problem',
@@ -362,7 +379,7 @@ $@"<div class=""card"">
       okReport:'Report sent! Thank you. The maintenance team has been notified.',
       okOperational:'Thanks! This equipment was marked as operational.',
       fail:""Couldn't send"", net:'Network error: ' }},
-    es: {{ title:'Reportar', sub:'Housekeeping', name:'Tu nombre *', namePh:'Ej. Ana',
+    es: {{ title:'Reportar', sub:'Housekeeping', name:'Empleado *', namePh:'Empieza a escribir tu nombre…',
       timeLbl:'Hora', statusLbl:'Estado *', optOperational:'Operativo', optProblem:'Un problema',
       sev:'¿Qué problema tiene?', sevNoFunciona:'No funciona', sevAMedias:'Funciona a medias', sevLeve:'Problema leve',
       notesLbl:'Notas', notesPh:'Agrega detalles (opcional)', notesPhReq:'Describe el problema',
@@ -392,6 +409,15 @@ $@"<div class=""card"">
     ta.placeholder = p ? I18N[LANG].notesPhReq : I18N[LANG].notesPh;
   }}
   function updNow() {{ const el = document.getElementById('now'); if (el) el.value = new Date().toLocaleString(); }}
+  async function loadEmployees() {{
+    try {{
+      const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/employees');
+      if (!r.ok) return;
+      const list = await r.json();
+      const dl = document.getElementById('employees');
+      dl.innerHTML = list.map(function (n) {{ return '<option value=\""' + n.replace(/\""/g,'&quot;') + '\""></option>'; }}).join('');
+    }} catch (e) {{}}
+  }}
 
   const f = document.getElementById('f');
   const btn = document.getElementById('btn');
@@ -427,6 +453,7 @@ $@"<div class=""card"">
   }});
 
   updNow();
+  loadEmployees();
   let init = 'en';
   try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
   setLang(init);

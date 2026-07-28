@@ -4,10 +4,14 @@ using Valentinos.Domain.Entities;
 
 namespace Valentinos.Infrastructure.Notifications;
 
-// Correos siempre en INGLÉS, con dos plantillas: reporte de problema (issue) y
-// check-in operativo. Comparten el mismo encabezado/pie (shell).
+// Correos siempre en INGLÉS, con dos plantillas (issue y operational) que comparten
+// encabezado/pie. El logo se referencia con `logoSrc`: en el envío real es "cid:vlogo"
+// (imagen incrustada por el sender); en la previsualización web es la URL estática.
 public class EmailChannel : INotificationChannel
 {
+    public const string CidLogo = "cid:vlogo";
+    public const string UrlLogo = "/images/brand/valentinos-v.jpg";
+
     private readonly IEmailSender _sender;
     public EmailChannel(IEmailSender sender) => _sender = sender;
 
@@ -21,7 +25,7 @@ public class EmailChannel : INotificationChannel
         var to = Recipients(tenant);
         if (to.Length == 0) return;
         var (sevLabel, sevColor) = Severity(n.Severidad);
-        var html = BuildIssueHtml(tenant.Nombre, n, sevLabel, sevColor);
+        var html = BuildIssueHtml(tenant.Nombre, n, sevLabel, sevColor, CidLogo);
         await _sender.SendAsync(to, IssueSubject(n.AssetCodigo, sevLabel), html, isHtml: true, ct);
     }
 
@@ -34,14 +38,18 @@ public class EmailChannel : INotificationChannel
     public static string OperationalSubject(string codigo)
         => $"[Valentino's] Operational check-in · {codigo}";
 
-    // Previsualizaciones para la demo.
+    // Envío real del check-in operativo (logo incrustado por CID).
+    public static string OperationalEmailHtml(string tenantNombre, string codigo, string? by, string? nota, string when)
+        => BuildOperationalHtml(tenantNombre, codigo, by, nota, when, CidLogo);
+
+    // Previsualizaciones para la demo (logo por URL, se abre en el navegador).
     public static string RenderIssuePreview(string tenantNombre, ReportCreatedNotification n)
     {
         var (label, color) = Severity(n.Severidad);
-        return BuildIssueHtml(tenantNombre, n, label, color);
+        return BuildIssueHtml(tenantNombre, n, label, color, UrlLogo);
     }
     public static string RenderOperationalPreview(string tenantNombre, string codigo, string? by, string? nota, string when)
-        => BuildOperationalHtml(tenantNombre, codigo, by, nota, when);
+        => BuildOperationalHtml(tenantNombre, codigo, by, nota, when, UrlLogo);
 
     private static (string label, string color) Severity(string severidad) => severidad switch
     {
@@ -52,15 +60,14 @@ public class EmailChannel : INotificationChannel
     };
 
     // ---------- Plantilla: ISSUE ----------
-    private static string BuildIssueHtml(string tenantNombre, ReportCreatedNotification n, string sevLabel, string sevColor)
+    private static string BuildIssueHtml(string tenantNombre, ReportCreatedNotification n, string sevLabel, string sevColor, string logoSrc)
     {
         var codigo = WebUtility.HtmlEncode(n.AssetCodigo);
-        var ubic = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(n.Ubicacion) ? "—" : n.Ubicacion);
         var by = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(n.ReportadoPor) ? "—" : n.ReportadoPor);
         var descripcion = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(n.Descripcion) ? "—" : n.Descripcion).Replace("\n", "<br>");
         var sev = WebUtility.HtmlEncode(sevLabel);
 
-        var rows = Row("Asset", codigo) + Row("Severity", sev) + Row("Location", ubic) + Row("Reported by", by);
+        var rows = Row("Asset", codigo) + Row("Severity", sev) + Row("Reported by", by);
         var body =
 $@"        <tr><td style=""padding:26px 28px 6px;"">
           <div style=""display:inline-block;background:{sevColor};color:#ffffff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px;"">{sev}</div>
@@ -72,11 +79,11 @@ $@"        <tr><td style=""padding:26px 28px 6px;"">
           <div style=""color:#64748b;font-size:13px;margin-bottom:6px;"">Description</div>
           <div style=""background:#f8fafc;border:1px solid #e5e9f0;border-radius:10px;padding:14px;color:#0f172a;font-size:14px;line-height:1.5;"">{descripcion}</div>
         </td></tr>";
-        return Shell(tenantNombre, body);
+        return Shell(tenantNombre, body, logoSrc);
     }
 
     // ---------- Plantilla: OPERATIONAL ----------
-    public static string BuildOperationalHtml(string tenantNombre, string codigo, string? reportadoPor, string? nota, string when)
+    private static string BuildOperationalHtml(string tenantNombre, string codigo, string? reportadoPor, string? nota, string when, string logoSrc)
     {
         var cod = WebUtility.HtmlEncode(codigo);
         var by = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(reportadoPor) ? "—" : reportadoPor);
@@ -97,7 +104,7 @@ $@"        <tr><td style=""padding:26px 28px 6px;"">
         </td></tr>
         <tr><td style=""padding:14px 28px 8px;""><table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"">{rows}</table></td></tr>
 {noteBlock}";
-        return Shell(tenantNombre, body);
+        return Shell(tenantNombre, body, logoSrc);
     }
 
     private static string Row(string label, string value) =>
@@ -106,8 +113,7 @@ $@"<tr>
   <td style=""padding:10px 0;border-bottom:1px solid #e5e9f0;color:#0f172a;font-size:14px;font-weight:600;"">{value}</td>
 </tr>";
 
-    // Encabezado + pie compartidos (tablas + estilos inline para compatibilidad).
-    private static string Shell(string tenantNombre, string bodyRows)
+    private static string Shell(string tenantNombre, string bodyRows, string logoSrc)
     {
         var tenant = WebUtility.HtmlEncode(tenantNombre);
         return
@@ -117,12 +123,10 @@ $@"<!doctype html>
   <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#eef2f7;padding:24px 12px;"">
     <tr><td align=""center"">
       <table role=""presentation"" width=""600"" cellpadding=""0"" cellspacing=""0"" style=""max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,.08);"">
-        <tr><td style=""background:#0b1f30;padding:22px 28px;"">
+        <tr><td style=""background:#0b1f30;padding:20px 28px;"">
           <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0""><tr>
-            <td style=""vertical-align:middle;width:48px;"">
-              <div style=""width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#123047,#0b1f30 70%);border:1px solid rgba(148,163,184,.3);text-align:center;line-height:44px;"">
-                <span style=""font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:700;font-size:26px;color:#d9bd6e;"">V</span>
-              </div>
+            <td style=""vertical-align:middle;width:52px;"">
+              <img src=""{logoSrc}"" width=""48"" height=""48"" alt=""Valentino's"" style=""display:block;width:48px;height:48px;border-radius:50%;border:1px solid rgba(148,163,184,.3);background:#0b1f30;"">
             </td>
             <td style=""vertical-align:middle;padding-left:12px;"">
               <div style=""color:#ffffff;font-size:16px;font-weight:700;letter-spacing:.2px;"">Valentino's</div>

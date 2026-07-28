@@ -10,4 +10,5 @@ public class SmtpOptions
     public string From { get; set; } = "no-reply@valentinos.com";
     public string FromName { get; set; } = "Valentino's";
     public string? Cc { get; set; } // copia (CC), separada por comas
+    public string? InlineLogoPath { get; set; } // ruta al logo para incrustarlo (cid:vlogo)
 }

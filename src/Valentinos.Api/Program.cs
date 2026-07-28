@@ -39,6 +39,11 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// Ruta del logo para incrustarlo (cid) en los correos.
+var smtpOpts = app.Services.GetRequiredService<SmtpOptions>();
+if (string.IsNullOrWhiteSpace(smtpOpts.InlineLogoPath) && !string.IsNullOrWhiteSpace(app.Environment.WebRootPath))
+    smtpOpts.InlineLogoPath = Path.Combine(app.Environment.WebRootPath, "images", "brand", "valentinos-v.jpg");
+
 app.UseStaticFiles(); // sirve wwwroot (banderas de idioma de la demo)
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseRateLimiter();
