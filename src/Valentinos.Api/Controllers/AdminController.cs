@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Abstractions;
 using Valentinos.Domain.Entities;
@@ -14,8 +15,8 @@ namespace Valentinos.Api.Controllers;
 // Panel de administración (solo admin autenticado): gestión de sites de un tenant,
 // sus encargados (CC del reporte) y sus vacuums.
 [ApiController]
-[Authorize]
-public class AdminController : ControllerBase
+[Authorize(Roles = "admin")]
+public class AdminController : ControllerBase, IActionFilter
 {
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenant;
@@ -28,6 +29,18 @@ public class AdminController : ControllerBase
 
     private Guid Tid => _tenant.TenantId ?? Guid.Empty;
     private string UserName => User.FindFirstValue(ClaimTypes.Name) ?? "Admin";
+
+    // Defensa en profundidad: el tenant de la cookie DEBE coincidir con el del subdominio.
+    // (Las cookies son host-only, pero esto evita cualquier cruce de tenant.)
+    [NonAction]
+    public void OnActionExecuting(ActionExecutingContext context)
+    {
+        var claim = User.FindFirstValue("tenant");
+        if (!Guid.TryParse(claim, out var userTenant) || userTenant == Guid.Empty || userTenant != Tid)
+            context.Result = new RedirectResult("/login");
+    }
+    [NonAction]
+    public void OnActionExecuted(ActionExecutedContext context) { }
 
     // ---------- Lista de sites ----------
     [HttpGet("/admin/sites")]
