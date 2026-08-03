@@ -50,8 +50,8 @@ public class AppDbContext : DbContext
         {
             e.Property(a => a.Codigo).HasMaxLength(40).IsRequired();
             e.Property(a => a.Ubicacion).HasMaxLength(200);
-            e.HasIndex(a => new { a.TenantId, a.Codigo }).IsUnique();
-            e.HasIndex(a => a.SiteId);
+            // Código único por SITE (cada site numera VAC-001.. desde 1).
+            e.HasIndex(a => new { a.SiteId, a.Codigo }).IsUnique();
             e.HasOne<AssetType>()
              .WithMany()
              .HasForeignKey(a => a.AssetTypeId)

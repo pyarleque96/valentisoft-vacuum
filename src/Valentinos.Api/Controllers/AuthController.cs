@@ -112,14 +112,15 @@ public class AuthController : ControllerBase
   .card {{ background:#fff; border:1px solid #e5e9f0; border-radius:16px; padding:28px 24px; width:100%; max-width:400px;
     box-shadow:0 12px 40px rgba(15,23,42,.10); }}
   .brand {{ display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:20px; }}
-  .logo {{ width:64px; height:64px; border-radius:16px; background:#0b1f30 url(/images/brand/valentinos-v.jpg) no-repeat 50% 46%/112%;
-    border:1px solid #e5e9f0; box-shadow:0 8px 22px rgba(15,23,42,.18); margin-bottom:12px; }}
+  .logo {{ width:64px; height:64px; border-radius:16px; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/contain;
+    border:1px solid #e5e9f0; box-shadow:0 8px 22px rgba(15,23,42,.10); margin-bottom:12px; }}
   h1 {{ font-size:20px; margin:0; color:#1560A8; }}
   .sub {{ color:#64748b; font-size:13px; margin-top:2px; }}
   label {{ display:block; font-size:13px; font-weight:600; color:#475569; margin:14px 0 6px; }}
   input[type=email], input[type=password] {{ width:100%; padding:12px; border-radius:10px; border:1px solid #cbd5e1;
     font-size:16px; color:#1f2937; }}
   input:focus {{ outline:none; border-color:#1560A8; box-shadow:0 0 0 3px rgba(21,96,168,.15); }}
+  input::placeholder {{ color:#cbd5e1; }}
   .row {{ display:flex; align-items:center; gap:8px; margin-top:14px; font-size:14px; color:#334155; }}
   .row input {{ width:18px; height:18px; accent-color:#1560A8; }}
   button {{ width:100%; margin-top:20px; padding:13px; border:0; border-radius:10px; background:#1560A8; color:#fff;
@@ -138,7 +139,7 @@ public class AuthController : ControllerBase
     <label for=""email"">Email</label>
     <input type=""email"" id=""email"" name=""email"" required autocomplete=""username"" placeholder=""you@company.com"">
     <label for=""password"">Password</label>
-    <input type=""password"" id=""password"" name=""password"" required autocomplete=""current-password"" placeholder=""••••••••"">
+    <input type=""password"" id=""password"" name=""password"" required autocomplete=""current-password"">
     <label class=""row""><input type=""checkbox"" name=""remember"" value=""1""> Keep me signed in</label>
     <button type=""submit"">Sign in</button>
   </form>
