@@ -42,34 +42,38 @@ public class DemoController : ControllerBase
         _reportEmailer = reportEmailer;
     }
 
-    // ¿El baseUrl ya es el subdominio del tenant? (host = {slug}.dominio). En ese caso
-    // no hay que repetir el slug en el path de las URLs públicas.
-    private static bool BaseIsTenantSubdomain(string baseUrl, string slug)
+    // URLs públicas SIEMPRE llevan el site slug en el path: /{siteSlug}/e/{code}, /{siteSlug}/f/hk.
+    private static string EquipmentUrl(string baseUrl, string siteSlug, string codigo) =>
+        $"{baseUrl}/{Uri.EscapeDataString(siteSlug)}/e/{Uri.EscapeDataString(codigo)}";
+
+    private static string EquipmentReportPath(string siteSlug, string codigo) =>
+        $"/{Uri.EscapeDataString(siteSlug)}/e/{Uri.EscapeDataString(codigo)}/report";
+
+    // URL pública del QR fijo (equipo no disponible) de un site.
+    private static string FixedUrl(string baseUrl, string siteSlug) =>
+        $"{baseUrl}/{Uri.EscapeDataString(siteSlug)}/f/hk";
+
+    // Resuelve un site por su slug + su tenant.
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site)> ResolveSiteAsync(string siteSlug)
     {
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var u)) return false;
-        var firstLabel = u.Host.Split('.')[0];
-        return string.Equals(firstLabel, slug, StringComparison.OrdinalIgnoreCase);
+        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Slug == siteSlug);
+        if (site is null) return (null, null);
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == site.TenantId);
+        return (tenant, site);
     }
 
-    // URL pública de la página del equipo. En subdominio omite el slug (implícito).
-    private static string EquipmentUrl(string baseUrl, string slug, string codigo) =>
-        BaseIsTenantSubdomain(baseUrl, slug)
-            ? $"{baseUrl}/e/{Uri.EscapeDataString(codigo)}"
-            : $"{baseUrl}/e/{Uri.EscapeDataString(slug)}/{Uri.EscapeDataString(codigo)}";
-
-    // Ruta (relativa) del formulario de reporte del equipo, según sea subdominio o no.
-    private string EquipmentReportPath(string slug, string codigo) =>
-        BaseIsTenantSubdomain(PublicBaseUrl(), slug)
-            ? $"/e/{Uri.EscapeDataString(codigo)}/report"
-            : $"/e/{Uri.EscapeDataString(slug)}/{Uri.EscapeDataString(codigo)}/report";
-
-    // URL pública del QR fijo (equipo no disponible). En subdominio usa la ruta
-    // amigable /f/housekeeping (el tenant se infiere del subdominio); en path-based
-    // (localhost) cae a /f/{slug}.
-    private static string FixedUrl(string baseUrl, string slug) =>
-        BaseIsTenantSubdomain(baseUrl, slug)
-            ? $"{baseUrl}/f/hk"
-            : $"{baseUrl}/f/{Uri.EscapeDataString(slug)}";
+    // Resuelve site + equipo (vacuum) por (siteSlug, código). Código es único por site.
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site, Domain.Entities.Asset? asset, Domain.Entities.AssetType? tipo)>
+        ResolveEquipmentAsync(string siteSlug, string codigo)
+    {
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return (tenant, site, null, null);
+        var asset = await _db.Assets.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(a => a.SiteId == site.Id && a.Codigo == codigo);
+        var tipo = asset is null ? null
+            : await _db.AssetTypes.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == asset.AssetTypeId);
+        return (tenant, site, asset, tipo);
+    }
 
     // Carga el logo de marca (PNG) desde wwwroot para incrustarlo al centro del QR.
     private byte[]? LoadBrandLogo(string? logo)
@@ -85,20 +89,21 @@ public class DemoController : ControllerBase
     // Se registra en el log y se envía el correo (plantilla operativa, en inglés).
     // Check-in unificado de estado (operativo / con fallas / fuera de servicio / sin
     // aspiradora). Registra el check-in (KPIs) y, si es un problema, crea el Report (fotos).
-    [HttpPost("/api/public/{slug}/equipments/{codigo}/operational")]
-    public async Task<IActionResult> MarkOperational(string slug, string codigo,
+    [HttpPost("/api/public/{siteSlug}/equipments/{codigo}/operational")]
+    public async Task<IActionResult> MarkOperational(string siteSlug, string codigo,
         [FromForm] string? reportadoPor, [FromForm] string? nota, [FromForm] string? estado,
         [FromForm] IFormFileCollection? fotos)
     {
-        var (tenant, asset, _) = await ResolveAsync(slug, codigo);
-        if (tenant is null || asset is null) return NotFound();
+        var (tenant, site, asset, _) = await ResolveEquipmentAsync(siteSlug, codigo);
+        if (tenant is null || site is null || asset is null) return NotFound();
 
         var estadoKey = string.IsNullOrWhiteSpace(estado) ? "operational" : estado;
         var by = string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor;
 
-        // Persistir el check-in (alimenta la página de KPIs).
+        // Persistir el check-in (alimenta la página de KPIs) con su SiteId.
         _db.StatusCheckins.Add(new Domain.Entities.StatusCheckin
         {
+            SiteId = site.Id,
             EmployeeName = by, AssetCodigo = asset.Codigo, EstadoKey = estadoKey, Nota = nota,
             CreatedAt = DateTime.Now // demo: hora local, consistente con el seeder y los KPIs
         });
@@ -159,21 +164,15 @@ public class DemoController : ControllerBase
     // `base` permite forzar la URL base (la landing la pasa explícitamente para
     // que el QR use la URL del túnel aunque el sub-request de la imagen no herede
     // los headers X-Forwarded-*).
-    [HttpGet("api/public/{slug}/equipments/{codigo}/qr.png")]
-    public async Task<IActionResult> QrPng(string slug, string codigo, [FromQuery] string? @base)
+    [HttpGet("api/public/{siteSlug}/equipments/{codigo}/qr.png")]
+    public async Task<IActionResult> QrPng(string siteSlug, string codigo, [FromQuery] string? @base)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
+        var (tenant, site, equipment, _) = await ResolveEquipmentAsync(siteSlug, codigo);
+        if (tenant is null || site is null || equipment is null) return NotFound();
 
-        var equipment = await _db.Assets.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(a => a.TenantId == tenant.Id && a.Codigo == codigo);
-        if (equipment is null) return NotFound();
-
-        byte[]? logo = null; // el tenant de demo no tiene logo; el QR se genera sin marca de agua
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
-        var url = $"{baseUrl}/e/{slug}/{codigo}";
-        var png = _qr.RenderPngForUrl(url, codigo, logo);
+        var url = EquipmentUrl(baseUrl, siteSlug, codigo);
+        var png = _qr.RenderPngForUrl(url, codigo, LoadBrandLogo("mastercorp"));
         return File(png, "image/png");
     }
 
@@ -181,182 +180,155 @@ public class DemoController : ControllerBase
 
     // Imagen del QR custom: codifica /e/{slug}/{code} y admite logo de marca al centro.
     // `download=1` fuerza la descarga del PNG.
-    [HttpGet("/qr/{slug}/img.png")]
-    public IActionResult QrCustomImg(string slug, [FromQuery] string? code,
+    [HttpGet("/qr/{siteSlug}/img.png")]
+    public IActionResult QrCustomImg(string siteSlug, [FromQuery] string? code,
         [FromQuery] string? logo, [FromQuery] string? @base, [FromQuery] int download = 0)
     {
         var codigo = string.IsNullOrWhiteSpace(code) ? "VAC-001" : code.Trim();
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
-        var url = EquipmentUrl(baseUrl, slug, codigo);
+        var url = EquipmentUrl(baseUrl, siteSlug, codigo);
         var png = _qr.RenderPngForUrl(url, codigo, LoadBrandLogo(logo ?? "mastercorp"));
         if (download == 1)
             return File(png, "image/png", $"QR-{codigo}.png");
         return File(png, "image/png");
     }
 
-    // QR FIJO para el cuarto de housekeeping: codifica /f/{slug} (reporte de equipo
-    // no disponible, sin activo específico). Logo de MasterCorp al centro.
-    [HttpGet("/qr/{slug}/fixed.png")]
-    public IActionResult QrFixedImg(string slug, [FromQuery] string? @base, [FromQuery] int download = 0)
+    // QR FIJO del cuarto de housekeeping de un site: codifica /{siteSlug}/f/hk.
+    [HttpGet("/qr/{siteSlug}/fixed.png")]
+    public IActionResult QrFixedImg(string siteSlug, [FromQuery] string? @base, [FromQuery] int download = 0)
     {
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
-        var url = FixedUrl(baseUrl, slug);
+        var url = FixedUrl(baseUrl, siteSlug);
         var png = _qr.RenderPngForUrl(url, "HOUSEKEEPING", LoadBrandLogo("mastercorp"));
         if (download == 1)
             return File(png, "image/png", "QR-housekeeping.png");
         return File(png, "image/png");
     }
 
-    // Página del generador de QR custom.
+    private Guid Tid => _tenant.TenantId ?? Guid.Empty;
+
+    // Generador de QR de un SITE (panel admin).
     [Authorize(Roles = "admin")]
-    [HttpGet("/qr/{slug}")]
-    public async Task<IActionResult> QrGenerator(string slug)
+    [HttpGet("/admin/sites/{id:guid}/qr")]
+    public async Task<IActionResult> QrGenerator(Guid id)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
+        var (tenant, site) = await ResolveSiteInTenantAsync(id);
+        if (tenant is null || site is null) return NotFound();
 
-        var assets = await _db.Assets.IgnoreQueryFilters()
-            .Where(a => a.TenantId == tenant.Id)
-            .OrderBy(a => a.Codigo)
-            .Select(a => a.Codigo)
-            .ToListAsync();
+        var codes = await _db.Assets.IgnoreQueryFilters()
+            .Where(a => a.SiteId == site.Id && a.Estado == Domain.Enums.AssetEstado.Activo)
+            .OrderBy(a => a.Codigo).Select(a => a.Codigo).ToListAsync();
 
-        return Content(QrGeneratorHtml(tenant.Nombre, slug, assets, PublicBaseUrl()),
+        return Content(QrGeneratorHtml(tenant.Nombre, site, codes, PublicBaseUrl()),
             "text/html; charset=utf-8");
     }
 
-    // Hoja PDF imprimible con TODOS los QRs de los equipos (por defecto 12 por página).
+    // Hoja PDF imprimible con TODOS los QRs del site (por defecto 6 por página).
     [Authorize(Roles = "admin")]
-    [HttpGet("/qr/{slug}/sheet.pdf")]
-    public async Task<IActionResult> QrSheet(string slug, [FromQuery] string? @base, [FromQuery] int perpage = 6)
+    [HttpGet("/qr/{siteSlug}/sheet.pdf")]
+    public async Task<IActionResult> QrSheet(string siteSlug, [FromQuery] string? @base, [FromQuery] int perpage = 6)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
+        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Slug == siteSlug && s.TenantId == Tid);
+        if (site is null) return NotFound();
 
         var codes = await _db.Assets.IgnoreQueryFilters()
-            .Where(a => a.TenantId == tenant.Id)
-            .OrderBy(a => a.Codigo)
-            .Select(a => a.Codigo)
-            .ToListAsync();
+            .Where(a => a.SiteId == site.Id && a.Estado == Domain.Enums.AssetEstado.Activo)
+            .OrderBy(a => a.Codigo).Select(a => a.Codigo).ToListAsync();
 
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
         var logo = LoadBrandLogo("mastercorp");
-        var pngs = codes.Select(c => _qr.RenderPngForUrl(EquipmentUrl(baseUrl, slug, c), c, logo)).ToList();
+        var pngs = codes.Select(c => _qr.RenderPngForUrl(EquipmentUrl(baseUrl, siteSlug, c), c, logo)).ToList();
 
         var pdf = Qr.QrSheetPdf.Render(pngs, perpage);
-        // Inline: el link directo lo muestra; el botón de la página fuerza descarga con `download`.
         return File(pdf, "application/pdf");
     }
 
-    // Página del equipo que abre el QR: logo de Valentino's + botón para reportar.
-    [HttpGet("/e/{slug}/{codigo}")]
-    public async Task<IActionResult> Intro(string slug, string codigo)
+    // Resuelve un site por id validando que pertenezca al tenant del subdominio (admin).
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site)> ResolveSiteInTenantAsync(Guid id)
     {
-        var (tenant, equipment, tipo) = await ResolveAsync(slug, codigo);
-        if (tenant is null) return NotFound();
+        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id && s.TenantId == Tid);
+        if (site is null) return (null, null);
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
+        return (tenant, site);
+    }
+
+    // Página del equipo que abre el QR: logo + botón para reportar. Ruta por site.
+    [HttpGet("/{siteSlug}/e/{codigo}")]
+    public async Task<IActionResult> Intro(string siteSlug, string codigo)
+    {
+        var (tenant, site, equipment, tipo) = await ResolveEquipmentAsync(siteSlug, codigo);
+        if (tenant is null || site is null) return NotFound();
         if (equipment is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
 
-        return Content(IntroHtml(tenant.Nombre, EquipmentReportPath(slug, codigo), codigo, tipo?.Nombre ?? "Equipment"),
+        return Content(IntroHtml(tenant.Nombre, EquipmentReportPath(siteSlug, codigo), codigo, tipo?.Nombre ?? "Equipment"),
             "text/html; charset=utf-8");
     }
 
     // Formulario de reporte del equipo (se llega desde el botón de la página del equipo).
-    [HttpGet("/e/{slug}/{codigo}/report")]
-    public async Task<IActionResult> ReportForm(string slug, string codigo)
+    [HttpGet("/{siteSlug}/e/{codigo}/report")]
+    public async Task<IActionResult> ReportForm(string siteSlug, string codigo)
     {
-        var (tenant, equipment, tipo) = await ResolveAsync(slug, codigo);
-        if (tenant is null) return NotFound();
+        var (tenant, site, equipment, tipo) = await ResolveEquipmentAsync(siteSlug, codigo);
+        if (tenant is null || site is null) return NotFound();
         if (equipment is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
 
-        return Content(FormHtml(tenant.Nombre, slug, codigo, tipo?.Nombre ?? "Equipment"),
+        return Content(FormHtml(tenant.Nombre, siteSlug, codigo, tipo?.Nombre ?? "Equipment"),
             "text/html; charset=utf-8");
     }
 
     // ---------- Flujo de "equipo no disponible" (QR fijo del cuarto de housekeeping) ----------
 
-    // Ruta amigable del QR fijo (subdominio): /f/hk. El tenant se infiere del
-    // subdominio (lo fijó el middleware en el ITenantContext).
-    [HttpGet("/f/hk")]
-    public async Task<IActionResult> UnavailableIntroFixed()
+    // QR fijo del cuarto de housekeeping de un site: /{siteSlug}/f/hk.
+    [HttpGet("/{siteSlug}/f/hk")]
+    public async Task<IActionResult> UnavailableIntroFixed(string siteSlug)
     {
-        if (_tenant.TenantId is not Guid tid) return NotFound();
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == tid);
-        if (tenant is null) return NotFound();
-        return Content(UnavailableIntroHtml(tenant.Nombre, tenant.Slug), "text/html; charset=utf-8");
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return NotFound();
+        return Content(UnavailableIntroHtml(tenant.Nombre, siteSlug), "text/html; charset=utf-8");
     }
 
-    // Pantalla inicial del QR fijo: NO está ligada a un activo; el botón solo dice "Reportar".
-    [HttpGet("/f/{slug}")]
-    public async Task<IActionResult> UnavailableIntro(string slug)
+    // Formulario de "equipo no disponible" del site: tipo (Vacuum), empleado, notas.
+    [HttpGet("/{siteSlug}/f/report")]
+    public async Task<IActionResult> UnavailableForm(string siteSlug)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
-        return Content(UnavailableIntroHtml(tenant.Nombre, slug), "text/html; charset=utf-8");
-    }
-
-    // Formulario de "equipo no disponible": tipo de equipo (solo Vacuum, preseleccionado),
-    // empleado primero, notas; sin fotos ni estado.
-    [HttpGet("/f/{slug}/reportar")]
-    public async Task<IActionResult> UnavailableForm(string slug)
-    {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return NotFound();
         var tipos = await _db.AssetTypes.IgnoreQueryFilters()
-            .Where(t => t.TenantId == tenant.Id)
-            .OrderBy(t => t.Nombre)
-            .Select(t => t.Nombre)
-            .ToListAsync();
+            .Where(t => t.TenantId == tenant.Id).OrderBy(t => t.Nombre).Select(t => t.Nombre).ToListAsync();
         if (tipos.Count == 0) tipos.Add("Vacuum");
-        return Content(UnavailableFormHtml(tenant.Nombre, slug, tipos), "text/html; charset=utf-8");
+        return Content(UnavailableFormHtml(tenant.Nombre, siteSlug, tipos), "text/html; charset=utf-8");
     }
 
-    // Registra un reporte de equipo no disponible.
-    [HttpPost("/api/public/{slug}/unavailable")]
-    public async Task<IActionResult> ReportUnavailable(string slug,
+    // Registra un reporte de equipo no disponible (con su SiteId).
+    [HttpPost("/api/public/{siteSlug}/unavailable")]
+    public async Task<IActionResult> ReportUnavailable(string siteSlug,
         [FromForm] string? reportadoPor, [FromForm] string? tipoEquipo, [FromForm] string? nota)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return NotFound();
 
         var by = string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor!.Trim();
         var tipo = string.IsNullOrWhiteSpace(tipoEquipo) ? "Vacuum" : tipoEquipo!.Trim();
 
         _db.UnavailableReports.Add(new Domain.Entities.UnavailableReport
         {
+            SiteId = site.Id,
             EmployeeName = by, EquipmentType = tipo, Nota = string.IsNullOrWhiteSpace(nota) ? null : nota,
-            CreatedAt = DateTime.Now // demo: hora local, consistente con el seeder y los KPIs
+            CreatedAt = DateTime.Now
         });
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("🚫 NO DISPONIBLE: {Tipo} ({Tenant}) por {Por}. Nota: {Nota}",
-            tipo, tenant.Nombre, by, string.IsNullOrWhiteSpace(nota) ? "-" : nota);
+        _logger.LogInformation("🚫 NO DISPONIBLE: {Tipo} ({Tenant}/{Site}) por {Por}",
+            tipo, tenant.Nombre, site.Code, by);
         return Ok(new { ok = true });
     }
 
-    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Asset? asset, Domain.Entities.AssetType? tipo)>
-        ResolveAsync(string slug, string codigo)
+    // Lista de empleados del tenant del site (para el autocompletar del formulario).
+    [HttpGet("/api/public/{siteSlug}/employees")]
+    public async Task<IActionResult> Employees(string siteSlug)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return (null, null, null);
-
-        var asset = await _db.Assets.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(a => a.TenantId == tenant.Id && a.Codigo == codigo);
-        if (asset is null) return (tenant, null, null);
-
-        var tipo = await _db.AssetTypes.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Id == asset.AssetTypeId);
-        return (tenant, asset, tipo);
-    }
-
-
-    // Lista de empleados del tenant (para el autocompletar del formulario).
-    [HttpGet("/api/public/{slug}/employees")]
-    public async Task<IActionResult> Employees(string slug)
-    {
-        var tenant = await _db.Tenants.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return NotFound();
 
         var names = await _db.Employees.IgnoreQueryFilters()
             .Where(e => e.TenantId == tenant.Id)
@@ -387,65 +359,44 @@ public class DemoController : ControllerBase
         return Content(html, "text/html; charset=utf-8");
     }
 
-    // ---------- Página de KPIs / reportes (ligada al tenant) ----------
-    private async Task<(Domain.Entities.Tenant? tenant, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadCheckinsAsync(string slug)
+    // ---------- Dashboard de KPIs por SITE (panel admin) ----------
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadSiteCheckinsAsync(Guid siteId)
     {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return (null, new List<Kpi.KpiCheckin>(), new List<Kpi.KpiUnavailable>());
+        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == siteId && s.TenantId == Tid);
+        if (site is null) return (null, null, new(), new());
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
         var since = DateTime.Now.Date.AddDays(-29);
         var list = await _db.StatusCheckins.IgnoreQueryFilters()
-            .Where(c => c.TenantId == tenant.Id && c.CreatedAt >= since)
+            .Where(c => c.SiteId == site.Id && c.CreatedAt >= since)
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new Kpi.KpiCheckin(c.EmployeeName, c.AssetCodigo, c.EstadoKey, c.Nota, c.CreatedAt))
             .ToListAsync();
         var unav = await _db.UnavailableReports.IgnoreQueryFilters()
-            .Where(u => u.TenantId == tenant.Id && u.CreatedAt >= since)
+            .Where(u => u.SiteId == site.Id && u.CreatedAt >= since)
             .OrderByDescending(u => u.CreatedAt)
             .Select(u => new Kpi.KpiUnavailable(u.EmployeeName, u.Nota, u.CreatedAt))
             .ToListAsync();
-        return (tenant, list, unav);
+        return (tenant, site, list, unav);
     }
 
     [Authorize(Roles = "admin")]
-    [HttpGet("/reports/{slug}")]
-    public async Task<IActionResult> KpiPage(string slug, [FromQuery] string? period)
+    [HttpGet("/admin/sites/{id:guid}/reports")]
+    public async Task<IActionResult> KpiPage(Guid id, [FromQuery] string? period)
     {
-        var (tenant, list, unav) = await LoadCheckinsAsync(slug);
-        if (tenant is null) return NotFound();
-        var model = Kpi.Kpi.Compute(tenant.Nombre, list, unav, DateTime.Now, period ?? "daily");
-        return Content(Kpi.KpiHtml.Render(model, slug), "text/html; charset=utf-8");
+        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(id);
+        if (tenant is null || site is null) return NotFound();
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · {site.Name}", list, unav, DateTime.Now, period ?? "daily");
+        return Content(Kpi.KpiHtml.Render(model, id.ToString()), "text/html; charset=utf-8");
     }
 
     [Authorize(Roles = "admin")]
-    [HttpGet("/reports/{slug}/pdf")]
-    public async Task<IActionResult> KpiPdfPreview(string slug, [FromQuery] string? period)
+    [HttpGet("/admin/sites/{id:guid}/reports/pdf")]
+    public async Task<IActionResult> KpiPdfPreview(Guid id, [FromQuery] string? period)
     {
-        var (tenant, list, unav) = await LoadCheckinsAsync(slug);
-        if (tenant is null) return NotFound();
-        var model = Kpi.Kpi.Compute(tenant.Nombre, list, unav, DateTime.Now, period ?? "daily");
+        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(id);
+        if (tenant is null || site is null) return NotFound();
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · {site.Name}", list, unav, DateTime.Now, period ?? "daily");
         return File(Kpi.KpiPdf.Render(model), "application/pdf");
-    }
-
-    // Genera el reporte del periodo seleccionado y lo envía por correo con el PDF adjunto.
-    // Los destinatarios SIEMPRE son los del tenant (NotificationEmails); NO se aceptan
-    // destinatarios arbitrarios desde el request (evita relay/exfiltración de correo).
-    [Authorize(Roles = "admin")]
-    [HttpPost("/reports/{slug}/generate")]
-    public async Task<IActionResult> KpiGenerate(string slug, [FromQuery] string? period)
-    {
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return NotFound();
-
-        try
-        {
-            var sent = await _reportEmailer.SendAsync(tenant, period ?? "daily");
-            return Ok(new { to = sent.Count > 0 ? string.Join(", ", sent) : (string?)null });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Fallo al enviar reporte");
-            return StatusCode(500, new { error = "email failed" });
-        }
     }
 
     // Landing de demo: muestra el QR y el enlace del formulario para el activo semilla.
@@ -867,7 +818,7 @@ $@"<div class=""card"">
     <div class=""muted"" data-i18n=""prompt"">Report equipment that isn't available</div>
   </div>
 
-  <a class=""btn-report"" href=""/f/{slugUrl}/reportar"" data-i18n=""report"">Report</a>
+  <a class=""btn-report"" href=""/{slugUrl}/f/report"" data-i18n=""report"">Report</a>
 </div>
 <script>
   const I18N = {{
@@ -1051,17 +1002,16 @@ $@"<div class=""card"">
         return Layout($"Demo {tenantH}", sb.ToString());
     }
 
-    // Generador de QR custom con logo de MasterCorp al centro.
-    private static string QrGeneratorHtml(string tenantNombre, string slug, List<string> assets, string baseUrl)
+    // Generador de QR custom de un SITE (con logo de MasterCorp al centro).
+    private static string QrGeneratorHtml(string tenantNombre, Domain.Entities.Site site, List<string> assets, string baseUrl)
     {
-        var tenantH = WebUtility.HtmlEncode(tenantNombre);
+        var slug = site.Slug;
+        var tenantH = WebUtility.HtmlEncode($"{tenantNombre} · {site.Name}");
         var slugJs = JsonSerializer.Serialize(slug);
         var baseJs = JsonSerializer.Serialize(baseUrl);
         var slugUrl = Uri.EscapeDataString(slug);
         var baseParam = Uri.EscapeDataString(baseUrl);
         var baseH = WebUtility.HtmlEncode(baseUrl);
-        var isSub = BaseIsTenantSubdomain(baseUrl, slug);
-        var isSubJs = isSub ? "true" : "false";
         var fixedUrlH = WebUtility.HtmlEncode(FixedUrl(baseUrl, slug));
         var codesJs = JsonSerializer.Serialize(assets);
         var first = assets.Count > 0 ? WebUtility.HtmlEncode(assets[0]) : "VAC-001";
@@ -1166,7 +1116,7 @@ $@"<div class=""card"">
   </div>
 </div>
 <script>
-  const SLUG = {slugJs}, BASE = {baseJs}, SUB = {isSubJs};
+  const SLUG = {slugJs}, BASE = {baseJs};
   const I18N = {{
     en: {{ genTitle:'QR Generator', codeLbl:'Equipment code', logoLbl:'Include logo in the center',
       dlSheet:'⬇ Download all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · Housekeeping room',
@@ -1225,7 +1175,7 @@ $@"<div class=""card"">
     const code = (codeEl.value || 'VAC-001').trim();
     qr.src = imgUrl(false);
     dl.href = imgUrl(true);
-    urlEl.textContent = SUB ? (BASE + '/e/' + code) : (BASE + '/e/' + SLUG + '/' + code);
+    urlEl.textContent = BASE + '/' + SLUG + '/e/' + code;
   }}
   codeEl.addEventListener('input', refresh);
   logoEl.addEventListener('change', refresh);

@@ -174,6 +174,8 @@ public class AdminController : ControllerBase, IActionFilter
     // ---------- HTML ----------
     private string SitesHtml(string tenantNombre, List<Site> sites, Dictionary<Guid, int> counts)
     {
+        const string gear = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""12"" r=""3""></circle><path d=""M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z""></path></svg>";
+        const string dash = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""9""></rect><rect x=""14"" y=""3"" width=""7"" height=""5""></rect><rect x=""14"" y=""12"" width=""7"" height=""9""></rect><rect x=""3"" y=""16"" width=""7"" height=""5""></rect></svg>";
         var rows = new StringBuilder();
         foreach (var s in sites)
         {
@@ -184,7 +186,10 @@ public class AdminController : ControllerBase, IActionFilter
               <td class=""mono"">{WebUtility.HtmlEncode(s.Code)}</td>
               <td>{n}</td>
               <td class=""cccell"">{cc}</td>
-              <td><a class=""lnk"" href=""/admin/sites/{s.Id}"">Configure</a></td>
+              <td class=""acts"">
+                <a class=""ico"" href=""/admin/sites/{s.Id}"" title=""Configure"" aria-label=""Configure"">{gear}</a>
+                <a class=""ico"" href=""/admin/sites/{s.Id}/reports"" title=""Dashboard"" aria-label=""Dashboard"">{dash}</a>
+              </td>
             </tr>");
         }
         if (sites.Count == 0)
@@ -217,8 +222,15 @@ public class AdminController : ControllerBase, IActionFilter
         foreach (var v in vacuums) chips.Append($@"<span class=""chip mono"">{WebUtility.HtmlEncode(v)}</span>");
         if (vacuums.Count == 0) chips.Append(@"<span class=""muted"">No vacuums yet.</span>");
 
+        const string qrIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""3"" width=""7"" height=""7""></rect><rect x=""3"" y=""14"" width=""7"" height=""7""></rect><line x1=""14"" y1=""14"" x2=""14"" y2=""21""></line><line x1=""21"" y1=""14"" x2=""21"" y2=""21""></line><line x1=""17"" y1=""17"" x2=""17"" y2=""17""></line></svg>";
+        const string dashIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""9""></rect><rect x=""14"" y=""3"" width=""7"" height=""5""></rect><rect x=""14"" y=""12"" width=""7"" height=""9""></rect><rect x=""3"" y=""16"" width=""7"" height=""5""></rect></svg>";
         var body = $@"
   <div class=""crumb""><a href=""/admin/sites"">← Sites</a></div>
+
+  <div class=""siteacts"">
+    <a href=""/admin/sites/{site.Id}/qr"">{qrIco} QR codes</a>
+    <a href=""/admin/sites/{site.Id}/reports"">{dashIco} Dashboard (KPIs)</a>
+  </div>
 
   <div class=""card"">
     <h2>{WebUtility.HtmlEncode(site.Name)} <span class=""mono muted"">/{WebUtility.HtmlEncode(site.Slug)}</span></h2>
@@ -274,6 +286,12 @@ public class AdminController : ControllerBase, IActionFilter
   .mono {{ font-family:ui-monospace,monospace; }} .muted {{ color:#94a3b8; }}
   .cccell {{ max-width:220px; word-break:break-word; font-size:13px; }}
   .lnk {{ color:#1560A8; text-decoration:none; font-weight:600; }}
+  .acts {{ white-space:nowrap; text-align:right; }}
+  .ico {{ display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border:1px solid #e5e9f0; border-radius:9px; color:#1560A8; margin-left:6px; text-decoration:none; transition:.15s; }}
+  .ico:hover {{ background:#eef4fb; border-color:#1560A8; }} .ico svg {{ width:18px; height:18px; }}
+  .siteacts {{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }}
+  .siteacts a {{ display:inline-flex; align-items:center; gap:8px; text-decoration:none; background:#eef4fb; color:#1560A8; font-weight:700; font-size:14px; border-radius:9px; padding:10px 14px; }}
+  .siteacts a:hover {{ background:#dbe8f7; }} .siteacts svg {{ width:18px; height:18px; }}
   label {{ display:block; font-size:13px; font-weight:600; color:#475569; margin:0 0 6px; }}
   input {{ width:100%; padding:11px; border-radius:9px; border:1px solid #cbd5e1; font-size:15px; color:#1f2937; }}
   input:focus {{ outline:none; border-color:#1560A8; box-shadow:0 0 0 3px rgba(21,96,168,.15); }}

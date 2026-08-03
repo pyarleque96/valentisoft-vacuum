@@ -170,22 +170,11 @@ public static class KpiHtml
       <select id=""period"" onchange=""location.href='?period='+this.value"">
         {Sel("daily", "Daily")}{Sel("weekly", "Weekly")}{Sel("monthly", "Monthly")}
       </select>
-      <button class=""btn"" id=""gen"" data-i18n=""send"">📄 Send report</button>
+      <a class=""btn"" href=""/admin/sites/{H(slug)}/reports/pdf?period={H(m.Period)}"" target=""_blank"" data-i18n=""dlpdf"">📄 Download PDF</a>
     </div>
     <div id=""msg""></div>
   </div>
 
-  <div class=""modal-bg"" id=""confirmBg"">
-    <div class=""modal"" role=""dialog"" aria-modal=""true"">
-      <div class=""mico""><svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M22 2 11 13""></path><path d=""M22 2 15 22l-4-9-9-4 20-7z""></path></svg></div>
-      <h3 data-i18n=""confirmTitle"">Send report?</h3>
-      <p data-i18n=""confirmMsg"">A PDF will be generated and emailed to the report's recipients. Do you want to continue?</p>
-      <div class=""modal-actions"">
-        <button class=""mbtn ghost"" id=""cCancel"" data-i18n=""confirmCancel"">Cancel</button>
-        <button class=""mbtn primary"" id=""cSend"" data-i18n=""confirmSend"">Send</button>
-      </div>
-    </div>
-  </div>
 
   <div class=""card"">
     <h2 data-i18n=""distTitle"">Status distribution</h2>
@@ -238,7 +227,7 @@ public static class KpiHtml
 </div>
 <script>
   const I18N = {{
-    en: {{ title:'KPI Report — Vacuum Control', send:'📄 Send report', sending:'Sending…',
+    en: {{ title:'KPI Report — Vacuum Control', dlpdf:'📄 Download PDF', send:'📄 Send report', sending:'Sending…',
       p_daily:'Daily', p_weekly:'Weekly', p_monthly:'Monthly',
       distTitle:'Status distribution', trendTitle:'Check-ins per day', topTitle:'Most reported',
       detailTitle:'Detail', kpiTitle:'KPIs', empty:'No records for this period.', noFaults:'No problems in this period 🎉',
@@ -248,7 +237,7 @@ public static class KpiHtml
       kAvail:'Availability', kFa:'% With faults', kOos:'% Out of service', recLbl:'Recommendation:',
       unTitle:'Unavailable equipment', unEmpty:'No unavailable-equipment reports for this period.', unCount:'reports in this period',
       confirmTitle:'Send report?', confirmMsg:""A PDF will be generated and emailed to the report's recipients. Do you want to continue?"", confirmCancel:'Cancel', confirmSend:'Send' }},
-    es: {{ title:'Reporte de KPIs — Aspiradoras', send:'📄 Enviar reporte', sending:'Enviando…',
+    es: {{ title:'Reporte de KPIs — Aspiradoras', dlpdf:'📄 Descargar PDF', send:'📄 Enviar reporte', sending:'Enviando…',
       p_daily:'Diario', p_weekly:'Semanal', p_monthly:'Mensual',
       distTitle:'Distribución de estado', trendTitle:'Check-ins por día', topTitle:'Más reportadas',
       detailTitle:'Detalle', kpiTitle:'KPIs', empty:'Sin registros en este periodo.', noFaults:'Sin problemas en este periodo 🎉',
@@ -271,28 +260,6 @@ public static class KpiHtml
     document.documentElement.lang = LANG;
     try {{ localStorage.setItem('lang', LANG); }} catch(e) {{}}
   }}
-  const g = document.getElementById('gen'), msg = document.getElementById('msg');
-  const confirmBg = document.getElementById('confirmBg');
-  function openConfirm() {{ confirmBg.classList.add('open'); }}
-  function closeConfirm() {{ confirmBg.classList.remove('open'); }}
-  // Al dar Send report NO se envia: se muestra el modal de confirmacion.
-  g.addEventListener('click', openConfirm);
-  document.getElementById('cCancel').addEventListener('click', closeConfirm);
-  confirmBg.addEventListener('click', e => {{ if (e.target === confirmBg) closeConfirm(); }});
-  document.addEventListener('keydown', e => {{ if (e.key === 'Escape') closeConfirm(); }});
-  // Solo al confirmar (botón Send del modal) se dispara el envío real.
-  async function doSend() {{
-    closeConfirm();
-    g.disabled = true; const t = g.textContent; g.textContent = I18N[LANG].sending; msg.innerHTML='';
-    try {{
-      const r = await fetch('/reports/' + encodeURIComponent({slugJs}) + '/generate?period=' + PERIOD, {{ method:'POST' }});
-      const j = await r.json().catch(()=>({{}}));
-      if (r.ok) msg.innerHTML = '<div class=""ok"">✅ '+(LANG==='es'?'Reporte enviado (PDF)':'Report sent (PDF)')+'.</div>';
-      else msg.innerHTML = '<div class=""err"">'+(LANG==='es'?'No se pudo enviar':'Could not send')+' ('+r.status+').</div>';
-    }} catch (e) {{ msg.innerHTML = '<div class=""err"">'+(LANG==='es'?'Error de red':'Network error')+': '+e+'</div>'; }}
-    g.disabled = false; g.textContent = t;
-  }}
-  document.getElementById('cSend').addEventListener('click', doSend);
   // Fade a la derecha de la tabla: se oculta cuando el scroll llega al final.
   document.querySelectorAll('.tblshell').forEach(function (sh) {{
     const w = sh.querySelector('.tblwrap'); if (!w) return;
