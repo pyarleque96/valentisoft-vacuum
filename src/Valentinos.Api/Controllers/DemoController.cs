@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
@@ -207,6 +208,7 @@ public class DemoController : ControllerBase
     }
 
     // Página del generador de QR custom.
+    [Authorize]
     [HttpGet("/qr/{slug}")]
     public async Task<IActionResult> QrGenerator(string slug)
     {
@@ -224,6 +226,7 @@ public class DemoController : ControllerBase
     }
 
     // Hoja PDF imprimible con TODOS los QRs de los equipos (por defecto 12 por página).
+    [Authorize]
     [HttpGet("/qr/{slug}/sheet.pdf")]
     public async Task<IActionResult> QrSheet(string slug, [FromQuery] string? @base, [FromQuery] int perpage = 6)
     {
@@ -403,6 +406,7 @@ public class DemoController : ControllerBase
         return (tenant, list, unav);
     }
 
+    [Authorize]
     [HttpGet("/reports/{slug}")]
     public async Task<IActionResult> KpiPage(string slug, [FromQuery] string? period)
     {
@@ -412,6 +416,7 @@ public class DemoController : ControllerBase
         return Content(Kpi.KpiHtml.Render(model, slug), "text/html; charset=utf-8");
     }
 
+    [Authorize]
     [HttpGet("/reports/{slug}/pdf")]
     public async Task<IActionResult> KpiPdfPreview(string slug, [FromQuery] string? period)
     {
@@ -424,6 +429,7 @@ public class DemoController : ControllerBase
     // Genera el reporte del periodo seleccionado y lo envía por correo con el PDF adjunto.
     // Los destinatarios SIEMPRE son los del tenant (NotificationEmails); NO se aceptan
     // destinatarios arbitrarios desde el request (evita relay/exfiltración de correo).
+    [Authorize]
     [HttpPost("/reports/{slug}/generate")]
     public async Task<IActionResult> KpiGenerate(string slug, [FromQuery] string? period)
     {

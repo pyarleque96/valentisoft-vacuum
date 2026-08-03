@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Api.Multitenancy;
@@ -26,6 +27,28 @@ if (builder.Environment.IsDevelopment() && !smtpEnabled)
 builder.Services.AddScoped<Valentinos.Api.Reports.ReportEmailer>();
 builder.Services.AddHostedService<Valentinos.Api.Reports.DailyReportScheduler>();
 
+// Autenticación por cookie para el panel admin.
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(o =>
+    {
+        o.LoginPath = "/login";
+        o.LogoutPath = "/logout";
+        o.AccessDeniedPath = "/login";
+        o.ExpireTimeSpan = TimeSpan.FromHours(8);
+        o.SlidingExpiration = true;
+        o.Cookie.Name = "valentisoft.auth";
+        o.Cookie.HttpOnly = true;
+        o.Cookie.SameSite = SameSiteMode.Lax;
+        o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        // Forzar redirect 302 al login (evita 401 en navegaciones de página).
+        o.Events = new CookieAuthenticationEvents
+        {
+            OnRedirectToLogin = ctx => { ctx.Response.Redirect(ctx.RedirectUri); return Task.CompletedTask; },
+            OnRedirectToAccessDenied = ctx => { ctx.Response.Redirect(ctx.RedirectUri); return Task.CompletedTask; }
+        };
+    });
+builder.Services.AddAuthorization();
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -48,12 +71,24 @@ var smtpOpts = app.Services.GetRequiredService<SmtpOptions>();
 if (string.IsNullOrWhiteSpace(smtpOpts.InlineLogoPath) && !string.IsNullOrWhiteSpace(app.Environment.WebRootPath))
     smtpOpts.InlineLogoPath = Path.Combine(app.Environment.WebRootPath, "images", "brand", "valentinos-v.jpg");
 
+// Detrás del túnel de Cloudflare, respetar X-Forwarded-Proto/Host (para que las
+// cookies Secure y los redirects usen https y el host público, no localhost).
+var fwd = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+                     | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost
+};
+fwd.KnownNetworks.Clear(); fwd.KnownProxies.Clear(); // el túnel local es de confianza
+app.UseForwardedHeaders(fwd);
+
 app.UseStaticFiles(); // sirve wwwroot (banderas de idioma de la demo)
 // El middleware de tenant va ANTES de UseRouting: reescribe la ruta (inyecta el slug
 // del subdominio) antes del match de endpoints. UseRouting explícito evita que el
 // framework lo inserte automáticamente al inicio del pipeline.
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseRateLimiter();
 app.MapControllers();
 
