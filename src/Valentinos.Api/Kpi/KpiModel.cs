@@ -1,90 +1,105 @@
+using System.Globalization;
+
 namespace Valentinos.Api.Kpi;
 
 public record KpiCheckin(string Employee, string Vacuum, string EstadoKey, string? Nota, DateTime CreatedAt);
-
-public record KpiDailyRow(string Employee, string Vacuum, string StatusLabel, string EstadoKey, string Notes);
-
+public record KpiUnavailable(string Employee, string? Nota, DateTime CreatedAt);
+public record KpiRow(string Employee, string Vacuum, string EstadoKey, string Notes, string When);
+public record UnavailableRow(string Employee, string Note, string When);
 public record AssetCount(string Vacuum, int Count);
+public record DayCount(string Label, int Total, int Problems);
 
-public record KpiModel(
+public record PeriodKpi(
     string TenantName,
     DateTime GeneratedAt,
-    // Diario
-    IReadOnlyList<KpiDailyRow> DailyRows,
-    int DOperational, int DFaults, int DOutOfService, int DUnavailable, int DTotal,
-    IReadOnlyList<string> DProblemAssets,
-    // Semanal
-    int WTotal, int WOpPct, int WFaultsPct, int WOosPct,
-    IReadOnlyList<AssetCount> WTopFaulty, int WRepairs, double WAvgRepairDays,
-    // Mensual
-    int MTotal, int MAvailabilityPct, int MOos, int MRepairs, double MAvgOosDays,
-    IReadOnlyList<AssetCount> MTopFaulty, string MRecommendation);
+    string Period,          // daily | weekly | monthly
+    string PeriodLabel,     // "Today" / "Last 7 days" / "Last 30 days"
+    int Op, int Fa, int Oos, int Un, int Total,
+    int OpPct, int FaPct, int OosPct, int UnPct,
+    IReadOnlyList<KpiRow> Rows,
+    IReadOnlyList<AssetCount> TopFaulty,
+    IReadOnlyList<string> ProblemAssets,
+    int Repairs, double AvgRepairDays,
+    int AvailabilityPct, string Recommendation,
+    IReadOnlyList<DayCount> Trend, bool ShowTrend,
+    IReadOnlyList<UnavailableRow> Unavailable);
 
 public static class Kpi
 {
-    public static string Label(string estadoKey) => estadoKey switch
+    public static PeriodKpi Compute(string tenantName, IReadOnlyList<KpiCheckin> all,
+        IReadOnlyList<KpiUnavailable> unavailableAll, DateTime now, string period)
     {
-        "operational" => "Operational",
-        "AMedias" => "Working with faults",
-        "NoFunciona" => "Out of service",
-        "unavailable" => "No vacuum available",
-        _ => estadoKey
-    };
-
-    public static KpiModel Compute(string tenantName, IReadOnlyList<KpiCheckin> all, DateTime now)
-    {
+        period = period is "weekly" or "monthly" ? period : "daily";
         var today = now.Date;
-        var weekStart = today.AddDays(-6);
-        var monthStart = today.AddDays(-29);
+        var (start, label, days) = period switch
+        {
+            "weekly" => (today.AddDays(-6), "Last 7 days", 7),
+            "monthly" => (today.AddDays(-29), "Last 30 days", 30),
+            _ => (today, "Today", 1)
+        };
 
         bool IsProblem(string k) => k is "AMedias" or "NoFunciona";
+        int Pct(int n, int t) => t == 0 ? 0 : (int)Math.Round(100.0 * n / t);
+        // Diario -> hora del registro; semanal/mensual -> fecha.
+        string WhenStr(DateTime dt) => period == "daily"
+            ? dt.ToString("h:mm tt", CultureInfo.InvariantCulture)
+            : dt.ToString("MMM d", CultureInfo.InvariantCulture);
 
-        // ---- Diario ----
-        var day = all.Where(c => c.CreatedAt.Date == today).OrderBy(c => c.CreatedAt).ToList();
-        var dailyRows = day.Select(c => new KpiDailyRow(
-            c.Employee, c.Vacuum, Label(c.EstadoKey), c.EstadoKey,
-            string.IsNullOrWhiteSpace(c.Nota) ? "—" : c.Nota!)).ToList();
-        var dOp = day.Count(c => c.EstadoKey == "operational");
-        var dFa = day.Count(c => c.EstadoKey == "AMedias");
-        var dOos = day.Count(c => c.EstadoKey == "NoFunciona");
-        var dUn = day.Count(c => c.EstadoKey == "unavailable");
-        var dProblemAssets = day.Where(c => IsProblem(c.EstadoKey))
+        var items = all.Where(c => c.CreatedAt.Date >= start && c.CreatedAt.Date <= today)
+                       .OrderByDescending(c => c.CreatedAt).ToList();
+
+        // Reportes de "equipo no disponible" del periodo (tabla/flujo propio).
+        var unItems = unavailableAll.Where(u => u.CreatedAt.Date >= start && u.CreatedAt.Date <= today)
+                                    .OrderByDescending(u => u.CreatedAt).ToList();
+
+        var op = items.Count(c => c.EstadoKey == "operational");
+        var fa = items.Count(c => c.EstadoKey == "AMedias");
+        var oos = items.Count(c => c.EstadoKey == "NoFunciona");
+        var un = unItems.Count;
+        var total = op + fa + oos + un;
+
+        // Detalle: en diario todas las filas; en semanal/mensual solo los problemas (accionables).
+        var detailSrc = period == "daily" ? items : items.Where(c => IsProblem(c.EstadoKey)).ToList();
+        // Notas completas (sin recortar). En la página se muestran con salto de línea
+        // (wrap) a cierto ancho; no se truncan.
+        string NoteStr(string? n) => string.IsNullOrWhiteSpace(n) ? "—" : n!.Trim();
+        var rows = detailSrc.Take(60).Select(c => new KpiRow(
+            c.Employee, c.Vacuum, c.EstadoKey, NoteStr(c.Nota), WhenStr(c.CreatedAt))).ToList();
+
+        // Lista de "equipo no disponible": hora (diario) / fecha (semanal), nota recortada.
+        var unavailable = unItems.Take(60).Select(u => new UnavailableRow(
+            u.Employee, NoteStr(u.Nota), WhenStr(u.CreatedAt))).ToList();
+
+        var topFaulty = items.Where(c => IsProblem(c.EstadoKey))
+            .GroupBy(c => c.Vacuum).Select(g => new AssetCount(g.Key, g.Count()))
+            .OrderByDescending(a => a.Count).ThenBy(a => a.Vacuum).Take(6).ToList();
+        var problemAssets = items.Where(c => IsProblem(c.EstadoKey))
             .Select(c => c.Vacuum).Distinct().OrderBy(x => x).ToList();
 
-        // ---- Semanal ----
-        var week = all.Where(c => c.CreatedAt.Date >= weekStart).ToList();
-        var wTotal = week.Count;
-        int Pct(int n, int t) => t == 0 ? 0 : (int)Math.Round(100.0 * n / t);
-        var wOp = Pct(week.Count(c => c.EstadoKey == "operational"), wTotal);
-        var wFa = Pct(week.Count(c => c.EstadoKey == "AMedias"), wTotal);
-        var wOos = Pct(week.Count(c => c.EstadoKey == "NoFunciona"), wTotal);
-        var wTopFaulty = TopFaulty(week, IsProblem, 3);
-        var wRepairs = week.Count(c => c.EstadoKey == "NoFunciona") / 2 + 1; // fake
-        var wAvgRepair = 1.5;
+        var repairs = oos / 2 + fa / 3 + 1;                 // fake
+        var avgRepair = period == "monthly" ? 2.4 : 1.5;    // fake
+        var availability = Pct(op, total);
+        var rec = topFaulty.Count > 0
+            ? $"Replace {topFaulty[0].Vacuum}, buy new filters and schedule preventive maintenance."
+            : "All good — keep monitoring.";
 
-        // ---- Mensual ----
-        var month = all.Where(c => c.CreatedAt.Date >= monthStart).ToList();
-        var mTotal = month.Count;
-        var mAvail = Pct(month.Count(c => c.EstadoKey == "operational"), mTotal);
-        var mOos = month.Count(c => c.EstadoKey == "NoFunciona");
-        var mTopFaulty = TopFaulty(month, IsProblem, 3);
-        var mRepairs = mOos / 2 + month.Count(c => c.EstadoKey == "AMedias") / 3; // fake
-        var mAvgOos = 2.4;
-        var mRec = mTopFaulty.Count > 0
-            ? $"Replace {mTopFaulty[0].Vacuum}, buy new filters and schedule monthly preventive maintenance."
-            : "Keep monitoring; no critical assets this month.";
+        var trend = new List<DayCount>();
+        var showTrend = period != "daily";
+        if (showTrend)
+        {
+            for (var i = days - 1; i >= 0; i--)
+            {
+                var d0 = today.AddDays(-i);
+                var di = all.Where(c => c.CreatedAt.Date == d0).ToList();
+                trend.Add(new DayCount(d0.ToString(days > 7 ? "d" : "ddd", CultureInfo.InvariantCulture),
+                    di.Count, di.Count(c => IsProblem(c.EstadoKey))));
+            }
+        }
 
-        return new KpiModel(
-            tenantName, now,
-            dailyRows, dOp, dFa, dOos, dUn, day.Count, dProblemAssets,
-            wTotal, wOp, wFa, wOos, wTopFaulty, wRepairs, wAvgRepair,
-            mTotal, mAvail, mOos, mRepairs, mAvgOos, mTopFaulty, mRec);
+        return new PeriodKpi(tenantName, now, period, label,
+            op, fa, oos, un, total,
+            Pct(op, total), Pct(fa, total), Pct(oos, total), Pct(un, total),
+            rows, topFaulty, problemAssets,
+            repairs, avgRepair, availability, rec, trend, showTrend, unavailable);
     }
-
-    private static List<AssetCount> TopFaulty(IEnumerable<KpiCheckin> src, Func<string, bool> isProblem, int take)
-        => src.Where(c => isProblem(c.EstadoKey))
-              .GroupBy(c => c.Vacuum)
-              .Select(g => new AssetCount(g.Key, g.Count()))
-              .OrderByDescending(a => a.Count).ThenBy(a => a.Vacuum)
-              .Take(take).ToList();
 }

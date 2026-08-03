@@ -22,6 +22,10 @@ var smtpEnabled = builder.Configuration.GetValue<bool>("Smtp:Enabled");
 if (builder.Environment.IsDevelopment() && !smtpEnabled)
     builder.Services.AddScoped<IEmailSender, ConsoleEmailSender>();
 
+// Servicio de envío de reportes + scheduler diario (10:00 hora local).
+builder.Services.AddScoped<Valentinos.Api.Reports.ReportEmailer>();
+builder.Services.AddHostedService<Valentinos.Api.Reports.DailyReportScheduler>();
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -45,7 +49,11 @@ if (string.IsNullOrWhiteSpace(smtpOpts.InlineLogoPath) && !string.IsNullOrWhiteS
     smtpOpts.InlineLogoPath = Path.Combine(app.Environment.WebRootPath, "images", "brand", "valentinos-v.jpg");
 
 app.UseStaticFiles(); // sirve wwwroot (banderas de idioma de la demo)
+// El middleware de tenant va ANTES de UseRouting: reescribe la ruta (inyecta el slug
+// del subdominio) antes del match de endpoints. UseRouting explícito evita que el
+// framework lo inserte automáticamente al inicio del pipeline.
 app.UseMiddleware<TenantResolutionMiddleware>();
+app.UseRouting();
 app.UseRateLimiter();
 app.MapControllers();
 
@@ -61,7 +69,8 @@ if (!app.Environment.IsEnvironment("Testing"))
     if (app.Environment.IsDevelopment())
     {
         var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        await DemoSeeder.SeedAsync(db, tenantContext, "ramcesdrag@gmail.com");
+        await DemoSeeder.SeedAsync(db, tenantContext,
+            "christopher.strait@mastercorp.com,christopher.davey@mastercorp.com");
     }
 }
 

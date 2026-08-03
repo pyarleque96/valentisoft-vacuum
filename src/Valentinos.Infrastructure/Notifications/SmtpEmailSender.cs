@@ -25,9 +25,9 @@ public class SmtpEmailSender : IEmailSender
             return;
 
         // Gmail exige que el remitente sea la cuenta autenticada. Usamos un nombre
-        // visible ("Valentino's") como máscara: el destinatario ve el nombre, no el correo.
+        // visible ("ValentiSoft") como máscara: el destinatario ve el nombre, no el correo.
         var from = string.IsNullOrWhiteSpace(_options.From) ? _options.User : _options.From;
-        var fromName = string.IsNullOrWhiteSpace(_options.FromName) ? "Valentino's" : _options.FromName;
+        var fromName = string.IsNullOrWhiteSpace(_options.FromName) ? "ValentiSoft" : _options.FromName;
 
         using var message = new MailMessage { From = new MailAddress(from, fromName), Subject = subject };
         foreach (var addr in to) message.To.Add(addr);
@@ -48,7 +48,10 @@ public class SmtpEmailSender : IEmailSender
             // Vista HTML + logo incrustado por Content-ID (cid:vlogo) para que se
             // vea aunque el cliente bloquee imágenes externas.
             var htmlView = AlternateView.CreateAlternateViewFromString(body, null, MediaTypeNames.Text.Html);
-            if (!string.IsNullOrWhiteSpace(_options.InlineLogoPath) && File.Exists(_options.InlineLogoPath))
+            // Solo incrustamos la V cuando el HTML realmente la referencia (cid:vlogo).
+            // Si no, Gmail la mostraría como un adjunto suelto (p. ej. el correo del reporte KPI).
+            if (body.Contains("cid:vlogo", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(_options.InlineLogoPath) && File.Exists(_options.InlineLogoPath))
             {
                 var logo = new LinkedResource(_options.InlineLogoPath, new ContentType("image/jpeg"))
                 {

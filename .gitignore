@@ -6,3 +6,8 @@ node_modules/
 dist/
 .superpowers/
 .tools/
+# Fotos subidas por usuarios (datos, no código)
+src/Valentinos.Api/storage/
+# Certificados/credenciales locales
+*.pem
+*.pfx

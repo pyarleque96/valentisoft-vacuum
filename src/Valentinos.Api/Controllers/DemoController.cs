@@ -20,23 +20,71 @@ public class DemoController : ControllerBase
     private readonly ILogger<DemoController> _logger;
     private readonly Valentinos.Application.Notifications.IEmailSender _email;
     private readonly Valentinos.Application.Reports.IReportService _reports;
+    private readonly IWebHostEnvironment _env;
+    private readonly Valentinos.Application.Abstractions.ITenantContext _tenant;
+    private readonly Valentinos.Api.Reports.ReportEmailer _reportEmailer;
 
     public DemoController(AppDbContext db, IQrRenderer qr, ILogger<DemoController> logger,
         Valentinos.Application.Notifications.IEmailSender email,
-        Valentinos.Application.Reports.IReportService reports)
+        Valentinos.Application.Reports.IReportService reports,
+        IWebHostEnvironment env,
+        Valentinos.Application.Abstractions.ITenantContext tenant,
+        Valentinos.Api.Reports.ReportEmailer reportEmailer)
     {
         _db = db;
         _qr = qr;
         _logger = logger;
         _email = email;
         _reports = reports;
+        _env = env;
+        _tenant = tenant;
+        _reportEmailer = reportEmailer;
+    }
+
+    // ¿El baseUrl ya es el subdominio del tenant? (host = {slug}.dominio). En ese caso
+    // no hay que repetir el slug en el path de las URLs públicas.
+    private static bool BaseIsTenantSubdomain(string baseUrl, string slug)
+    {
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var u)) return false;
+        var firstLabel = u.Host.Split('.')[0];
+        return string.Equals(firstLabel, slug, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // URL pública de la página del equipo. En subdominio omite el slug (implícito).
+    private static string EquipmentUrl(string baseUrl, string slug, string codigo) =>
+        BaseIsTenantSubdomain(baseUrl, slug)
+            ? $"{baseUrl}/e/{Uri.EscapeDataString(codigo)}"
+            : $"{baseUrl}/e/{Uri.EscapeDataString(slug)}/{Uri.EscapeDataString(codigo)}";
+
+    // Ruta (relativa) del formulario de reporte del equipo, según sea subdominio o no.
+    private string EquipmentReportPath(string slug, string codigo) =>
+        BaseIsTenantSubdomain(PublicBaseUrl(), slug)
+            ? $"/e/{Uri.EscapeDataString(codigo)}/report"
+            : $"/e/{Uri.EscapeDataString(slug)}/{Uri.EscapeDataString(codigo)}/report";
+
+    // URL pública del QR fijo (equipo no disponible). En subdominio usa la ruta
+    // amigable /f/housekeeping (el tenant se infiere del subdominio); en path-based
+    // (localhost) cae a /f/{slug}.
+    private static string FixedUrl(string baseUrl, string slug) =>
+        BaseIsTenantSubdomain(baseUrl, slug)
+            ? $"{baseUrl}/f/hk"
+            : $"{baseUrl}/f/{Uri.EscapeDataString(slug)}";
+
+    // Carga el logo de marca (PNG) desde wwwroot para incrustarlo al centro del QR.
+    private byte[]? LoadBrandLogo(string? logo)
+    {
+        if (string.IsNullOrWhiteSpace(logo) || logo is "0" or "none") return null;
+        var file = logo is "mastercorp" or "1" or "true" ? "mastercorp-logo.png" : null;
+        if (file is null) return null;
+        var path = Path.Combine(_env.WebRootPath ?? "wwwroot", "images", "brand", file);
+        return System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : null;
     }
 
     // Check-in de estado "operativo": el housekeeper confirma que el equipo funciona.
     // Se registra en el log y se envía el correo (plantilla operativa, en inglés).
     // Check-in unificado de estado (operativo / con fallas / fuera de servicio / sin
     // aspiradora). Registra el check-in (KPIs) y, si es un problema, crea el Report (fotos).
-    [HttpPost("/api/public/{slug}/assets/{codigo}/operational")]
+    [HttpPost("/api/public/{slug}/equipments/{codigo}/operational")]
     public async Task<IActionResult> MarkOperational(string slug, string codigo,
         [FromForm] string? reportadoPor, [FromForm] string? nota, [FromForm] string? estado,
         [FromForm] IFormFileCollection? fotos)
@@ -50,7 +98,8 @@ public class DemoController : ControllerBase
         // Persistir el check-in (alimenta la página de KPIs).
         _db.StatusCheckins.Add(new Domain.Entities.StatusCheckin
         {
-            EmployeeName = by, AssetCodigo = asset.Codigo, EstadoKey = estadoKey, Nota = nota
+            EmployeeName = by, AssetCodigo = asset.Codigo, EstadoKey = estadoKey, Nota = nota,
+            CreatedAt = DateTime.Now // demo: hora local, consistente con el seeder y los KPIs
         });
         await _db.SaveChangesAsync();
 
@@ -109,48 +158,176 @@ public class DemoController : ControllerBase
     // `base` permite forzar la URL base (la landing la pasa explícitamente para
     // que el QR use la URL del túnel aunque el sub-request de la imagen no herede
     // los headers X-Forwarded-*).
-    [HttpGet("api/public/{slug}/assets/{codigo}/qr.png")]
+    [HttpGet("api/public/{slug}/equipments/{codigo}/qr.png")]
     public async Task<IActionResult> QrPng(string slug, string codigo, [FromQuery] string? @base)
     {
         var tenant = await _db.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Slug == slug);
         if (tenant is null) return NotFound();
 
-        var asset = await _db.Assets.IgnoreQueryFilters()
+        var equipment = await _db.Assets.IgnoreQueryFilters()
             .FirstOrDefaultAsync(a => a.TenantId == tenant.Id && a.Codigo == codigo);
-        if (asset is null) return NotFound();
+        if (equipment is null) return NotFound();
 
         byte[]? logo = null; // el tenant de demo no tiene logo; el QR se genera sin marca de agua
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
-        var url = $"{baseUrl}/r/{slug}/{codigo}";
+        var url = $"{baseUrl}/e/{slug}/{codigo}";
         var png = _qr.RenderPngForUrl(url, codigo, logo);
         return File(png, "image/png");
     }
 
-    // Página pública de reporte que abre el QR. HTML autocontenido; postea al
-    // endpoint público existente POST /api/public/{slug}/reports.
-    // Página de bienvenida que abre el QR: logo de Valentino's + botón para reportar.
-    [HttpGet("/r/{slug}/{codigo}")]
-    public async Task<IActionResult> Intro(string slug, string codigo)
-    {
-        var (tenant, asset, tipo) = await ResolveAsync(slug, codigo);
-        if (tenant is null) return NotFound();
-        if (asset is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
+    // ---------- Generador de QR custom (con logo de MasterCorp al centro) ----------
 
-        return Content(IntroHtml(tenant.Nombre, slug, codigo, tipo?.Nombre ?? "Activo"),
+    // Imagen del QR custom: codifica /e/{slug}/{code} y admite logo de marca al centro.
+    // `download=1` fuerza la descarga del PNG.
+    [HttpGet("/qr/{slug}/img.png")]
+    public IActionResult QrCustomImg(string slug, [FromQuery] string? code,
+        [FromQuery] string? logo, [FromQuery] string? @base, [FromQuery] int download = 0)
+    {
+        var codigo = string.IsNullOrWhiteSpace(code) ? "VAC-001" : code.Trim();
+        var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
+        var url = EquipmentUrl(baseUrl, slug, codigo);
+        var png = _qr.RenderPngForUrl(url, codigo, LoadBrandLogo(logo ?? "mastercorp"));
+        if (download == 1)
+            return File(png, "image/png", $"QR-{codigo}.png");
+        return File(png, "image/png");
+    }
+
+    // QR FIJO para el cuarto de housekeeping: codifica /f/{slug} (reporte de equipo
+    // no disponible, sin activo específico). Logo de MasterCorp al centro.
+    [HttpGet("/qr/{slug}/fixed.png")]
+    public IActionResult QrFixedImg(string slug, [FromQuery] string? @base, [FromQuery] int download = 0)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
+        var url = FixedUrl(baseUrl, slug);
+        var png = _qr.RenderPngForUrl(url, "HOUSEKEEPING", LoadBrandLogo("mastercorp"));
+        if (download == 1)
+            return File(png, "image/png", "QR-housekeeping.png");
+        return File(png, "image/png");
+    }
+
+    // Página del generador de QR custom.
+    [HttpGet("/qr/{slug}")]
+    public async Task<IActionResult> QrGenerator(string slug)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return NotFound();
+
+        var assets = await _db.Assets.IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenant.Id)
+            .OrderBy(a => a.Codigo)
+            .Select(a => a.Codigo)
+            .ToListAsync();
+
+        return Content(QrGeneratorHtml(tenant.Nombre, slug, assets, PublicBaseUrl()),
             "text/html; charset=utf-8");
     }
 
-    // Formulario de reporte (se llega desde el botón de la página de bienvenida).
-    [HttpGet("/r/{slug}/{codigo}/reportar")]
+    // Hoja PDF imprimible con TODOS los QRs de los equipos (por defecto 12 por página).
+    [HttpGet("/qr/{slug}/sheet.pdf")]
+    public async Task<IActionResult> QrSheet(string slug, [FromQuery] string? @base, [FromQuery] int perpage = 6)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return NotFound();
+
+        var codes = await _db.Assets.IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenant.Id)
+            .OrderBy(a => a.Codigo)
+            .Select(a => a.Codigo)
+            .ToListAsync();
+
+        var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
+        var logo = LoadBrandLogo("mastercorp");
+        var pngs = codes.Select(c => _qr.RenderPngForUrl(EquipmentUrl(baseUrl, slug, c), c, logo)).ToList();
+
+        var pdf = Qr.QrSheetPdf.Render(pngs, perpage);
+        // Inline: el link directo lo muestra; el botón de la página fuerza descarga con `download`.
+        return File(pdf, "application/pdf");
+    }
+
+    // Página del equipo que abre el QR: logo de Valentino's + botón para reportar.
+    [HttpGet("/e/{slug}/{codigo}")]
+    public async Task<IActionResult> Intro(string slug, string codigo)
+    {
+        var (tenant, equipment, tipo) = await ResolveAsync(slug, codigo);
+        if (tenant is null) return NotFound();
+        if (equipment is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
+
+        return Content(IntroHtml(tenant.Nombre, EquipmentReportPath(slug, codigo), codigo, tipo?.Nombre ?? "Equipment"),
+            "text/html; charset=utf-8");
+    }
+
+    // Formulario de reporte del equipo (se llega desde el botón de la página del equipo).
+    [HttpGet("/e/{slug}/{codigo}/report")]
     public async Task<IActionResult> ReportForm(string slug, string codigo)
     {
-        var (tenant, asset, tipo) = await ResolveAsync(slug, codigo);
+        var (tenant, equipment, tipo) = await ResolveAsync(slug, codigo);
         if (tenant is null) return NotFound();
-        if (asset is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
+        if (equipment is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
 
-        return Content(FormHtml(tenant.Nombre, slug, codigo, tipo?.Nombre ?? "Activo"),
+        return Content(FormHtml(tenant.Nombre, slug, codigo, tipo?.Nombre ?? "Equipment"),
             "text/html; charset=utf-8");
+    }
+
+    // ---------- Flujo de "equipo no disponible" (QR fijo del cuarto de housekeeping) ----------
+
+    // Ruta amigable del QR fijo (subdominio): /f/hk. El tenant se infiere del
+    // subdominio (lo fijó el middleware en el ITenantContext).
+    [HttpGet("/f/hk")]
+    public async Task<IActionResult> UnavailableIntroFixed()
+    {
+        if (_tenant.TenantId is not Guid tid) return NotFound();
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == tid);
+        if (tenant is null) return NotFound();
+        return Content(UnavailableIntroHtml(tenant.Nombre, tenant.Slug), "text/html; charset=utf-8");
+    }
+
+    // Pantalla inicial del QR fijo: NO está ligada a un activo; el botón solo dice "Reportar".
+    [HttpGet("/f/{slug}")]
+    public async Task<IActionResult> UnavailableIntro(string slug)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return NotFound();
+        return Content(UnavailableIntroHtml(tenant.Nombre, slug), "text/html; charset=utf-8");
+    }
+
+    // Formulario de "equipo no disponible": tipo de equipo (solo Vacuum, preseleccionado),
+    // empleado primero, notas; sin fotos ni estado.
+    [HttpGet("/f/{slug}/reportar")]
+    public async Task<IActionResult> UnavailableForm(string slug)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return NotFound();
+        var tipos = await _db.AssetTypes.IgnoreQueryFilters()
+            .Where(t => t.TenantId == tenant.Id)
+            .OrderBy(t => t.Nombre)
+            .Select(t => t.Nombre)
+            .ToListAsync();
+        if (tipos.Count == 0) tipos.Add("Vacuum");
+        return Content(UnavailableFormHtml(tenant.Nombre, slug, tipos), "text/html; charset=utf-8");
+    }
+
+    // Registra un reporte de equipo no disponible.
+    [HttpPost("/api/public/{slug}/unavailable")]
+    public async Task<IActionResult> ReportUnavailable(string slug,
+        [FromForm] string? reportadoPor, [FromForm] string? tipoEquipo, [FromForm] string? nota)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
+        if (tenant is null) return NotFound();
+
+        var by = string.IsNullOrWhiteSpace(reportadoPor) ? "-" : reportadoPor!.Trim();
+        var tipo = string.IsNullOrWhiteSpace(tipoEquipo) ? "Vacuum" : tipoEquipo!.Trim();
+
+        _db.UnavailableReports.Add(new Domain.Entities.UnavailableReport
+        {
+            EmployeeName = by, EquipmentType = tipo, Nota = string.IsNullOrWhiteSpace(nota) ? null : nota,
+            CreatedAt = DateTime.Now // demo: hora local, consistente con el seeder y los KPIs
+        });
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("🚫 NO DISPONIBLE: {Tipo} ({Tenant}) por {Por}. Nota: {Nota}",
+            tipo, tenant.Nombre, by, string.IsNullOrWhiteSpace(nota) ? "-" : nota);
+        return Ok(new { ok = true });
     }
 
     private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Asset? asset, Domain.Entities.AssetType? tipo)>
@@ -208,65 +385,61 @@ public class DemoController : ControllerBase
     }
 
     // ---------- Página de KPIs / reportes (ligada al tenant) ----------
-    private async Task<(Domain.Entities.Tenant? tenant, List<Kpi.KpiCheckin> checkins)> LoadCheckinsAsync(string slug)
+    private async Task<(Domain.Entities.Tenant? tenant, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadCheckinsAsync(string slug)
     {
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
-        if (tenant is null) return (null, new List<Kpi.KpiCheckin>());
+        if (tenant is null) return (null, new List<Kpi.KpiCheckin>(), new List<Kpi.KpiUnavailable>());
         var since = DateTime.Now.Date.AddDays(-29);
         var list = await _db.StatusCheckins.IgnoreQueryFilters()
             .Where(c => c.TenantId == tenant.Id && c.CreatedAt >= since)
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new Kpi.KpiCheckin(c.EmployeeName, c.AssetCodigo, c.EstadoKey, c.Nota, c.CreatedAt))
             .ToListAsync();
-        return (tenant, list);
+        var unav = await _db.UnavailableReports.IgnoreQueryFilters()
+            .Where(u => u.TenantId == tenant.Id && u.CreatedAt >= since)
+            .OrderByDescending(u => u.CreatedAt)
+            .Select(u => new Kpi.KpiUnavailable(u.EmployeeName, u.Nota, u.CreatedAt))
+            .ToListAsync();
+        return (tenant, list, unav);
     }
 
     [HttpGet("/reports/{slug}")]
-    public async Task<IActionResult> KpiPage(string slug)
+    public async Task<IActionResult> KpiPage(string slug, [FromQuery] string? period)
     {
-        var (tenant, list) = await LoadCheckinsAsync(slug);
+        var (tenant, list, unav) = await LoadCheckinsAsync(slug);
         if (tenant is null) return NotFound();
-        var model = Kpi.Kpi.Compute(tenant.Nombre, list, DateTime.Now);
+        var model = Kpi.Kpi.Compute(tenant.Nombre, list, unav, DateTime.Now, period ?? "daily");
         return Content(Kpi.KpiHtml.Render(model, slug), "text/html; charset=utf-8");
     }
 
-    // Previsualización del PDF del reporte (mismo contenido que la página / el adjunto).
     [HttpGet("/reports/{slug}/pdf")]
-    public async Task<IActionResult> KpiPdfPreview(string slug)
+    public async Task<IActionResult> KpiPdfPreview(string slug, [FromQuery] string? period)
     {
-        var (tenant, list) = await LoadCheckinsAsync(slug);
+        var (tenant, list, unav) = await LoadCheckinsAsync(slug);
         if (tenant is null) return NotFound();
-        var model = Kpi.Kpi.Compute(tenant.Nombre, list, DateTime.Now);
+        var model = Kpi.Kpi.Compute(tenant.Nombre, list, unav, DateTime.Now, period ?? "daily");
         return File(Kpi.KpiPdf.Render(model), "application/pdf");
     }
 
-    // Genera el reporte diario y lo envía por correo con el PDF adjunto (acción manual).
+    // Genera el reporte del periodo seleccionado y lo envía por correo con el PDF adjunto.
+    // Los destinatarios SIEMPRE son los del tenant (NotificationEmails); NO se aceptan
+    // destinatarios arbitrarios desde el request (evita relay/exfiltración de correo).
     [HttpPost("/reports/{slug}/generate")]
-    public async Task<IActionResult> KpiGenerate(string slug)
+    public async Task<IActionResult> KpiGenerate(string slug, [FromQuery] string? period)
     {
-        var (tenant, list) = await LoadCheckinsAsync(slug);
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Slug == slug);
         if (tenant is null) return NotFound();
 
-        var model = Kpi.Kpi.Compute(tenant.Nombre, list, DateTime.Now);
-        var pdf = Kpi.KpiPdf.Render(model);
-        var to = Valentinos.Infrastructure.Notifications.EmailChannel.Recipients(tenant);
-        if (to.Length == 0) return Ok(new { to = (string?)null });
-
-        var subject = $"[Valentino's] Daily report generated · {tenant.Nombre}";
-        var body =
-            $"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#334155;font-size:14px;\">" +
-            $"<h2 style=\"color:#1560A8;\">Daily report generated</h2>" +
-            $"<p>The daily KPI report for <b>{WebUtility.HtmlEncode(tenant.Nombre)}</b> has been generated on {model.GeneratedAt:g}.</p>" +
-            $"<p>Today — Operational: {model.DOperational} · With faults: {model.DFaults} · Out of service: {model.DOutOfService} · No vacuum: {model.DUnavailable} · Total: {model.DTotal}.</p>" +
-            $"<p>The full report is attached as a PDF.</p></div>";
-        var att = new Valentinos.Application.Notifications.EmailAttachment(
-            pdf, $"KPI-Report-{DateTime.Now:yyyy-MM-dd}.pdf", "application/pdf");
-
-        try { await _email.SendAsync(to, subject, body, isHtml: true, attachment: att); }
-        catch (Exception ex) { _logger.LogError(ex, "Fallo al enviar reporte diario"); return StatusCode(500, new { error = "email failed" }); }
-
-        _logger.LogInformation("📄 Reporte diario generado y enviado a {To} (PDF {Bytes} bytes)", string.Join(", ", to), pdf.Length);
-        return Ok(new { to = string.Join(", ", to) });
+        try
+        {
+            var sent = await _reportEmailer.SendAsync(tenant, period ?? "daily");
+            return Ok(new { to = sent.Count > 0 ? string.Join(", ", sent) : (string?)null });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallo al enviar reporte");
+            return StatusCode(500, new { error = "email failed" });
+        }
     }
 
     // Landing de demo: muestra el QR y el enlace del formulario para el activo semilla.
@@ -294,6 +467,9 @@ $@"<!doctype html>
 <meta charset=""utf-8"">
 <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
 <title>{title}</title>
+<link rel=""icon"" href=""/favicon.ico"" sizes=""any"">
+<link rel=""icon"" type=""image/png"" href=""/favicon-32.png"">
+<link rel=""apple-touch-icon"" href=""/favicon-180.png"">
 <style>
   :root {{ color-scheme: light; }}
   body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
@@ -476,7 +652,6 @@ $@"<div class=""card"">
       <label class=""stat""><input type=""radio"" name=""estado"" value=""operational"" checked onchange=""onStatus()""> <span data-i18n=""stOperativa"">Operational</span> <b class=""dot dot-green""></b></label>
       <label class=""stat""><input type=""radio"" name=""estado"" value=""AMedias"" onchange=""onStatus()""> <span data-i18n=""stFallas"">Working with faults</span> <b class=""dot dot-amber""></b></label>
       <label class=""stat""><input type=""radio"" name=""estado"" value=""NoFunciona"" onchange=""onStatus()""> <span data-i18n=""stFuera"">Out of service</span> <b class=""dot dot-red""></b></label>
-      <label class=""stat""><input type=""radio"" name=""estado"" value=""unavailable"" onchange=""onStatus()""> <span data-i18n=""stUnavailable"">No vacuum available</span> <b class=""dot dot-gray""></b></label>
     </div>
 
     <label data-i18n=""notesLbl"">Notes</label>
@@ -585,7 +760,7 @@ $@"<div class=""card"">
     try {{
       const fd = new FormData(f);          // reportadoPor, descripcion, fotos, estado (radio)
       fd.append('nota', f.descripcion.value);
-      const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/assets/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST', body: fd }});
+      const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/equipments/' + encodeURIComponent(CODE) + '/operational', {{ method:'POST', body: fd }});
       if (r.ok) {{
         vSuccess(problem ? d.okReport : (val === 'unavailable' ? d.okUnavailable : d.okOperational));
       }} else {{
@@ -608,13 +783,12 @@ $@"<div class=""card"">
         return Layout($"Reportar {codigoH}", inner, "fill");
     }
 
-    private static string IntroHtml(string tenantNombre, string slug, string codigo, string tipoNombre)
+    private static string IntroHtml(string tenantNombre, string reportHref, string codigo, string tipoNombre)
     {
         var tenantH = WebUtility.HtmlEncode(tenantNombre);
         var tipoH = WebUtility.HtmlEncode(tipoNombre);
         var codigoH = WebUtility.HtmlEncode(codigo);
-        var slugUrl = Uri.EscapeDataString(slug);
-        var codigoUrl = Uri.EscapeDataString(codigo);
+        var reportHrefH = WebUtility.HtmlEncode(reportHref);
 
         var inner =
 $@"<div class=""card"">
@@ -637,7 +811,7 @@ $@"<div class=""card"">
     <div class=""badge"">{tipoH} · {codigoH}</div>
   </div>
 
-  <a class=""btn-report"" href=""/r/{slugUrl}/{codigoUrl}/reportar"" data-i18n=""report"">Report</a>
+  <a class=""btn-report"" href=""{reportHrefH}"" data-i18n=""report"">Report</a>
 </div>
 <script>
   const I18N = {{
@@ -661,6 +835,190 @@ $@"<div class=""card"">
         return Layout($"{tenantNombre} · {codigo}", inner);
     }
 
+    // Pantalla inicial del QR fijo (equipo no disponible). Sin activo; el botón dice "Reportar".
+    private static string UnavailableIntroHtml(string tenantNombre, string slug)
+    {
+        var tenantH = WebUtility.HtmlEncode(tenantNombre);
+        var slugUrl = Uri.EscapeDataString(slug);
+
+        var inner =
+$@"<div class=""card"">
+  <div class=""top"">
+    <div></div>
+    <div class=""langs"">
+      <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')"">
+        <img src=""/images/flags/us-circle.svg"" alt=""English"" width=""26"" height=""26"">
+      </button>
+      <button type=""button"" class=""flag"" id=""flag-es"" title=""Español"" onclick=""setLang('es')"">
+        <img src=""/images/flags/es-circle.svg"" alt=""Español"" width=""26"" height=""26"">
+      </button>
+    </div>
+  </div>
+
+  <div class=""hero"">
+    <div class=""logo"" role=""img"" aria-label=""Valentino's Group""></div>
+    <h1 style=""margin:0"">{tenantH}</h1>
+    <div class=""muted"" data-i18n=""prompt"">Report equipment that isn't available</div>
+  </div>
+
+  <a class=""btn-report"" href=""/f/{slugUrl}/reportar"" data-i18n=""report"">Report</a>
+</div>
+<script>
+  const I18N = {{
+    en: {{ prompt:""Report equipment that isn't available"", report:'Report' }},
+    es: {{ prompt:'Reporta un equipo que no está disponible', report:'Reportar' }}
+  }};
+  let LANG = 'en';
+  function setLang(l) {{
+    LANG = I18N[l] ? l : 'en';
+    const d = I18N[LANG];
+    document.querySelectorAll('[data-i18n]').forEach(el => {{ const k = el.getAttribute('data-i18n'); if (d[k]) el.textContent = d[k]; }});
+    document.getElementById('flag-en').classList.toggle('active', LANG==='en');
+    document.getElementById('flag-es').classList.toggle('active', LANG==='es');
+    document.documentElement.lang = LANG;
+    try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
+  }}
+  let init = 'en';
+  try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
+  setLang(init);
+</script>";
+        return Layout($"{tenantNombre} · Housekeeping", inner);
+    }
+
+    // Formulario de "equipo no disponible": tipo de equipo (preseleccionado), empleado,
+    // comentarios. Sin fotos ni estado.
+    private static string UnavailableFormHtml(string tenantNombre, string slug, List<string> tipos)
+    {
+        var tenantH = WebUtility.HtmlEncode(tenantNombre);
+        var slugJs = JsonSerializer.Serialize(slug);
+        var opts = new StringBuilder();
+        for (var i = 0; i < tipos.Count; i++)
+            opts.Append($@"<option value=""{WebUtility.HtmlEncode(tipos[i])}""{(i == 0 ? " selected" : "")}>{WebUtility.HtmlEncode(tipos[i])}</option>");
+
+        var inner =
+$@"<div class=""card"">
+  <div class=""top"">
+    <h1 data-i18n=""title"">Report</h1>
+    <div class=""langs"">
+      <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')"">
+        <img src=""/images/flags/us-circle.svg"" alt=""English"" width=""26"" height=""26"">
+      </button>
+      <button type=""button"" class=""flag"" id=""flag-es"" title=""Español"" onclick=""setLang('es')"">
+        <img src=""/images/flags/es-circle.svg"" alt=""Español"" width=""26"" height=""26"">
+      </button>
+    </div>
+  </div>
+  <div class=""muted"">{tenantH} · <span data-i18n=""sub"">Housekeeping</span></div>
+  <div class=""badge"" data-i18n=""tag"">Unavailable equipment</div>
+
+  <form id=""f"">
+    <label data-i18n=""name"">Employee *</label>
+    <div class=""ac"">
+      <input name=""reportadoPor"" id=""emp"" required autocomplete=""off"" data-i18n-ph=""namePh"" placeholder=""Start typing your name…"">
+      <div class=""ac-list"" id=""empList""></div>
+    </div>
+
+    <label data-i18n=""typeLbl"">Equipment type *</label>
+    <select name=""tipoEquipo"" id=""tipo"">{opts}</select>
+
+    <label data-i18n=""notesLbl"">Comments</label>
+    <textarea name=""nota"" data-i18n-ph=""notesPh"" placeholder=""Add any details (optional)""></textarea>
+
+    <button type=""submit"" id=""btn"" data-i18n=""send"">Send</button>
+  </form>
+  <div id=""msg""></div>
+</div>
+<script>
+  const SLUG = {slugJs};
+  const I18N = {{
+    en: {{ title:'Report', sub:'Housekeeping', tag:'Unavailable equipment', name:'Employee *', namePh:'Start typing your name…',
+      typeLbl:'Equipment type *', notesLbl:'Comments', notesPh:'Add any details (optional)',
+      send:'Send', sending:'Sending…',
+      ok:'Report sent! Thanks — the team has been notified.',
+      fail:""Couldn't send"", net:'Network error: ' }},
+    es: {{ title:'Reportar', sub:'Housekeeping', tag:'Equipo no disponible', name:'Empleado *', namePh:'Empieza a escribir tu nombre…',
+      typeLbl:'Tipo de equipo *', notesLbl:'Comentarios', notesPh:'Agrega detalles (opcional)',
+      send:'Enviar', sending:'Enviando…',
+      ok:'¡Reporte enviado! Gracias — el equipo fue avisado.',
+      fail:'No se pudo enviar', net:'Error de red: ' }}
+  }};
+  let LANG = 'en';
+  function setLang(l) {{
+    LANG = I18N[l] ? l : 'en';
+    const d = I18N[LANG];
+    document.querySelectorAll('[data-i18n]').forEach(el => {{ const k = el.getAttribute('data-i18n'); if (d[k]) el.textContent = d[k]; }});
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {{ const k = el.getAttribute('data-i18n-ph'); if (d[k]) el.placeholder = d[k]; }});
+    document.getElementById('flag-en').classList.toggle('active', LANG==='en');
+    document.getElementById('flag-es').classList.toggle('active', LANG==='es');
+    document.documentElement.lang = LANG;
+    try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
+  }}
+  let EMPLOYEES = [];
+  function acEsc(s) {{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/""/g,'&quot;'); }}
+  function acRender(filter) {{
+    const box = document.getElementById('empList');
+    const q = (filter||'').trim().toLowerCase();
+    const matches = EMPLOYEES.filter(function (n) {{ return !q || n.toLowerCase().indexOf(q) >= 0; }}).slice(0,60);
+    box.innerHTML = matches.length
+      ? matches.map(function (n) {{ return '<div class=""ac-item"" data-v=""'+acEsc(n)+'"">'+acEsc(n)+'</div>'; }}).join('')
+      : '<div class=""ac-empty"">No matches</div>';
+    box.classList.add('open');
+  }}
+  function acWire() {{
+    const inp = document.getElementById('emp');
+    const box = document.getElementById('empList');
+    if (!inp || !box) return;
+    inp.addEventListener('focus', function () {{ acRender(inp.value); }});
+    inp.addEventListener('input', function () {{ acRender(inp.value); }});
+    box.addEventListener('click', function (e) {{
+      const it = e.target.closest('.ac-item'); if (!it) return;
+      inp.value = it.getAttribute('data-v');
+      box.classList.remove('open');
+      inp.blur();
+    }});
+    document.addEventListener('click', function (e) {{
+      if (!e.target.closest('.ac')) box.classList.remove('open');
+    }});
+  }}
+  async function loadEmployees() {{
+    try {{
+      const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/employees');
+      if (r.ok) EMPLOYEES = await r.json();
+    }} catch (e) {{}}
+    acWire();
+  }}
+
+  const f = document.getElementById('f');
+  const btn = document.getElementById('btn');
+  const msg = document.getElementById('msg');
+  f.addEventListener('submit', async (e) => {{
+    e.preventDefault();
+    const d = I18N[LANG];
+    btn.disabled = true; btn.textContent = d.sending; msg.innerHTML = '';
+    try {{
+      const fd = new FormData(f); // reportadoPor, tipoEquipo, nota
+      const r = await fetch('/api/public/' + encodeURIComponent(SLUG) + '/unavailable', {{ method:'POST', body: fd }});
+      if (r.ok) {{
+        vSuccess(d.ok);
+      }} else {{
+        const t = await r.text();
+        msg.innerHTML = '<div class=""err"">'+d.fail+' ('+r.status+'). '+t+'</div>';
+        btn.disabled=false; btn.textContent=d.send;
+      }}
+    }} catch (err) {{
+      msg.innerHTML = '<div class=""err"">'+d.net+err+'</div>';
+      btn.disabled=false; btn.textContent=d.send;
+    }}
+  }});
+
+  loadEmployees();
+  let init = 'en';
+  try {{ const saved = localStorage.getItem('lang'); if (saved) init = saved; }} catch (e) {{}}
+  setLang(init);
+</script>";
+        return Layout($"{tenantNombre} · Housekeeping", inner, "fill");
+    }
+
     private static string LandingHtml(string tenantNombre, string slug, List<string> assets, string baseUrl)
     {
         var baseParam = Uri.EscapeDataString(baseUrl);
@@ -675,20 +1033,243 @@ $@"<div class=""card"">
             var codigoH = WebUtility.HtmlEncode(codigo);       // texto/atributo HTML
             sb.Append($@"<div style=""margin-top:20px;text-align:center"">
   <div class=""badge"">{codigoH}</div><br>
-  <img class=""qr"" src=""/api/public/{slugUrl}/assets/{codigoUrl}/qr.png?base={baseParam}"" alt=""QR {codigoH}"">
+  <img class=""qr"" src=""/api/public/{slugUrl}/equipments/{codigoUrl}/qr.png?base={baseParam}"" alt=""QR {codigoH}"">
   <div class=""muted"" style=""margin-top:8px"">
-    <a href=""/r/{slugUrl}/{codigoUrl}"">/r/{codigoH}</a>
+    <a href=""/e/{slugUrl}/{codigoUrl}"">/e/{codigoH}</a>
   </div>
 </div>");
         }
         if (assets.Count == 0)
-            sb.Append(@"<p class=""muted"">No hay activos sembrados todavía.</p>");
+            sb.Append(@"<p class=""muted"">No hay equipos sembrados todavía.</p>");
         sb.Append("</div>");
         return Layout($"Demo {tenantH}", sb.ToString());
     }
 
+    // Generador de QR custom con logo de MasterCorp al centro.
+    private static string QrGeneratorHtml(string tenantNombre, string slug, List<string> assets, string baseUrl)
+    {
+        var tenantH = WebUtility.HtmlEncode(tenantNombre);
+        var slugJs = JsonSerializer.Serialize(slug);
+        var baseJs = JsonSerializer.Serialize(baseUrl);
+        var slugUrl = Uri.EscapeDataString(slug);
+        var baseParam = Uri.EscapeDataString(baseUrl);
+        var baseH = WebUtility.HtmlEncode(baseUrl);
+        var isSub = BaseIsTenantSubdomain(baseUrl, slug);
+        var isSubJs = isSub ? "true" : "false";
+        var fixedUrlH = WebUtility.HtmlEncode(FixedUrl(baseUrl, slug));
+        var codesJs = JsonSerializer.Serialize(assets);
+        var first = assets.Count > 0 ? WebUtility.HtmlEncode(assets[0]) : "VAC-001";
+        const string clip = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""9"" y=""9"" width=""13"" height=""13"" rx=""2""></rect><path d=""M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1""></path></svg>";
+        const string dlIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4""></path><polyline points=""7 10 12 15 17 10""></polyline><line x1=""12"" y1=""15"" x2=""12"" y2=""3""></line></svg>";
+
+        return $@"<!doctype html>
+<html lang=""es""><head><meta charset=""utf-8"">
+<meta name=""viewport"" content=""width=device-width, initial-scale=1"">
+<title>QR Generator · {tenantH}</title>
+<link rel=""icon"" href=""/favicon.ico"" sizes=""any"">
+<link rel=""icon"" type=""image/png"" href=""/favicon-32.png"">
+<link rel=""apple-touch-icon"" href=""/favicon-180.png"">
+<style>
+  :root {{ color-scheme: light; }} * {{ box-sizing:border-box; }}
+  body {{ margin:0; background:#eef1f5; color:#334155; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; -webkit-text-size-adjust:100%; }}
+  .wrap {{ max-width:560px; margin:0 auto; padding:16px 14px 60px; }}
+  .card {{ background:#fff; border:1px solid #e5e9f0; border-radius:16px; padding:18px; box-shadow:0 8px 24px rgba(15,23,42,.05); margin-bottom:14px; }}
+  .head {{ display:flex; align-items:center; gap:12px; }}
+  .logo {{ width:46px; height:46px; border-radius:12px; flex:0 0 auto; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/contain; border:1px solid #e5e9f0; }}
+  h1 {{ font-size:18px; margin:0; color:#1560A8; }}
+  .sub {{ color:#64748b; font-size:12px; margin-top:2px; }}
+  label {{ display:block; font-size:13px; font-weight:600; color:#475569; margin:14px 0 6px; }}
+  input[type=text] {{ width:100%; padding:12px; border-radius:10px; border:1px solid #cbd5e1; font-size:16px; color:#1f2937; }}
+  .chk {{ display:flex; align-items:center; gap:10px; margin-top:14px; font-size:14px; font-weight:600; color:#334155; cursor:pointer; }}
+  .chk input {{ width:20px; height:20px; accent-color:#1560A8; }}
+  .qrbox {{ text-align:center; }}
+  .qrframe {{ position:relative; display:inline-block; padding:14px; background:#fff; border:1px solid #e5e9f0; border-radius:14px; }}
+  .qr-dl {{ position:absolute; top:10px; right:10px; width:36px; height:36px; display:inline-flex; align-items:center;
+    justify-content:center; border:1px solid #e5e9f0; border-radius:9px; background:rgba(255,255,255,.92); color:#1560A8;
+    cursor:pointer; box-shadow:0 2px 8px rgba(15,23,42,.12); transition:.15s; }}
+  .qr-dl:hover {{ background:#eef4fb; }}
+  .qr-dl.ok {{ color:#16a34a; border-color:#16a34a; background:#eaf7ee; }}
+  .qr-dl svg {{ width:18px; height:18px; }}
+  .qrframe img {{ display:block; width:260px; height:auto; max-width:100%; }}
+  .urlbox {{ margin-top:12px; font-size:12.5px; color:#64748b; word-break:break-all; background:#f8fafc; border:1px solid #e5e9f0; border-radius:10px; padding:10px 12px; }}
+  .urlrow {{ display:flex; align-items:stretch; gap:8px; margin-top:12px; }}
+  .urlrow .urlbox {{ margin-top:0; flex:1 1 auto; min-width:0; }}
+  .copybtn {{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:44px;
+    border:1px solid #cbd5e1; border-radius:10px; background:#fff; color:#1560A8; cursor:pointer; transition:.15s; }}
+  .copybtn:hover {{ background:#eef4fb; }}
+  .copybtn.ok {{ color:#16a34a; border-color:#16a34a; background:#eaf7ee; }}
+  .copybtn svg {{ width:18px; height:18px; }}
+  .btn {{ display:block; width:100%; text-align:center; text-decoration:none; background:#1560A8; color:#fff; border:0; border-radius:10px; padding:13px 16px; font-weight:700; font-size:15px; cursor:pointer; margin-top:14px; }}
+  .btn:hover {{ background:#0f4c85; }}
+  .top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }}
+  .langs {{ display:flex; gap:6px; flex:0 0 auto; }}
+  .flag {{ padding:2px; background:transparent; border:0; cursor:pointer; border-radius:999px; line-height:0; opacity:.45; transition:opacity .15s, box-shadow .15s; }}
+  .flag:hover {{ opacity:.85; }}
+  .flag.active {{ opacity:1; box-shadow:0 0 0 2px #1560A8; }}
+  .flag img {{ display:block; border-radius:999px; width:24px; height:24px; }}
+  .ac {{ position:relative; }}
+  .ac-list {{ position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
+    background:#fff; border:1px solid #cbd5e1; border-radius:10px; max-height:230px;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain;
+    display:none; box-shadow:0 12px 30px rgba(15,23,42,.15); }}
+  .ac-list.open {{ display:block; }}
+  .ac-item {{ padding:12px 14px; cursor:pointer; font-size:15px; color:#334155; border-bottom:1px solid #eef2f6; }}
+  .ac-item:last-child {{ border-bottom:0; }}
+  .ac-item.active, .ac-item:hover {{ background:#eef4fb; color:#0f4c85; }}
+  .ac-empty {{ padding:12px 14px; color:#94a3b8; font-size:14px; }}
+</style></head>
+<body><div class=""wrap"">
+  <div class=""card"">
+    <div class=""top"">
+      <div class=""head"">
+        <div class=""logo""></div>
+        <div><h1 data-i18n=""genTitle"">QR Generator</h1><div class=""sub"">{tenantH} · Housekeeping</div></div>
+      </div>
+      <div class=""langs"">
+        <button type=""button"" class=""flag"" id=""flag-en"" title=""English"" onclick=""setLang('en')""><img src=""/images/flags/us-circle.svg"" alt=""English""></button>
+        <button type=""button"" class=""flag"" id=""flag-es"" title=""Español"" onclick=""setLang('es')""><img src=""/images/flags/es-circle.svg"" alt=""Español""></button>
+      </div>
+    </div>
+    <label for=""code"" data-i18n=""codeLbl"">Equipment code</label>
+    <div class=""ac"">
+      <input type=""text"" id=""code"" value=""{first}"" autocomplete=""off"" placeholder=""VAC-001"">
+      <div class=""ac-list"" id=""codeList""></div>
+    </div>
+    <label class=""chk""><input type=""checkbox"" id=""logo"" checked> <span data-i18n=""logoLbl"">Include logo in the center</span></label>
+    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6"" data-i18n=""dlSheet"" download=""QRs-{slugUrl}.pdf"">⬇ Download all QRs (PDF)</a>
+  </div>
+
+  <div class=""card qrbox"">
+    <div class=""qrframe""><img id=""qr"" alt=""QR"" src=""""><button type=""button"" class=""qr-dl"" id=""saveQr"" title=""Save"" aria-label=""Save"">{dlIco}</button></div>
+    <div class=""urlrow"">
+      <div class=""urlbox"" id=""url""></div>
+      <button type=""button"" class=""copybtn"" id=""copyUrl"" title=""Copy"" aria-label=""Copy"">{clip}</button>
+    </div>
+    <a class=""btn"" id=""dl"" data-i18n=""dlBtn"" download>⬇ Download PNG</a>
+  </div>
+
+  <div class=""card qrbox"">
+    <h1 style=""font-size:15px;margin:0 0 4px"" data-i18n=""fixedTitle"">Fixed QR · Housekeeping room</h1>
+    <div class=""sub"" style=""margin-bottom:12px"" data-i18n=""fixedDesc"">To report unavailable equipment (without scanning a specific one).</div>
+    <div class=""qrframe""><img alt=""QR fijo housekeeping"" src=""/qr/{slugUrl}/fixed.png?base={baseParam}""><button type=""button"" class=""qr-dl"" id=""saveFixed"" title=""Save"" aria-label=""Save"">{dlIco}</button></div>
+    <div class=""urlrow"">
+      <div class=""urlbox"" id=""urlFixed"">{fixedUrlH}</div>
+      <button type=""button"" class=""copybtn"" id=""copyFixed"" title=""Copy"" aria-label=""Copy"">{clip}</button>
+    </div>
+    <a class=""btn"" href=""/qr/{slugUrl}/fixed.png?base={baseParam}&amp;download=1"" data-i18n=""dlFixed"" download>⬇ Download fixed QR</a>
+  </div>
+</div>
+<script>
+  const SLUG = {slugJs}, BASE = {baseJs}, SUB = {isSubJs};
+  const I18N = {{
+    en: {{ genTitle:'QR Generator', codeLbl:'Equipment code', logoLbl:'Include logo in the center',
+      dlSheet:'⬇ Download all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · Housekeeping room',
+      fixedDesc:'To report unavailable equipment (without scanning a specific one).', dlFixed:'⬇ Download fixed QR' }},
+    es: {{ genTitle:'Generador de QR', codeLbl:'Código del equipo', logoLbl:'Incluir logo al centro',
+      dlSheet:'⬇ Descargar todos los QR (PDF)', dlBtn:'⬇ Descargar PNG', fixedTitle:'QR fijo · Cuarto de housekeeping',
+      fixedDesc:'Para reportar un equipo no disponible (sin escanear un equipo específico).', dlFixed:'⬇ Descargar QR fijo' }}
+  }};
+  let LANG = 'en';
+  function setLang(l) {{
+    LANG = I18N[l] ? l : 'en';
+    const d = I18N[LANG];
+    document.querySelectorAll('[data-i18n]').forEach(el => {{ const k = el.getAttribute('data-i18n'); if (d[k]) el.textContent = d[k]; }});
+    document.getElementById('flag-en').classList.toggle('active', LANG==='en');
+    document.getElementById('flag-es').classList.toggle('active', LANG==='es');
+    document.documentElement.lang = LANG;
+    try {{ localStorage.setItem('lang', LANG); }} catch (e) {{}}
+  }}
+  const CODES = {codesJs};
+  const codeEl = document.getElementById('code'), logoEl = document.getElementById('logo');
+  const qr = document.getElementById('qr'), urlEl = document.getElementById('url'), dl = document.getElementById('dl');
+  // Dropdown personalizado de códigos de equipo (mismo estilo que el form).
+  function acEsc(s) {{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/""/g,'&quot;'); }}
+  function acRender(filter) {{
+    const box = document.getElementById('codeList');
+    const q = (filter||'').trim().toLowerCase();
+    const matches = CODES.filter(function (c) {{ return !q || c.toLowerCase().indexOf(q) >= 0; }}).slice(0,60);
+    box.innerHTML = matches.length
+      ? matches.map(function (c) {{ return '<div class=""ac-item"" data-v=""'+acEsc(c)+'"">'+acEsc(c)+'</div>'; }}).join('')
+      : '<div class=""ac-empty"">No matches</div>';
+    box.classList.add('open');
+  }}
+  function acWire() {{
+    const box = document.getElementById('codeList');
+    // Al enfocar: seleccionar el texto y mostrar TODA la lista (el campo viene precargado).
+    codeEl.addEventListener('focus', function () {{ codeEl.select(); acRender(''); }});
+    codeEl.addEventListener('input', function () {{ acRender(codeEl.value); }});
+    box.addEventListener('click', function (e) {{
+      const it = e.target.closest('.ac-item'); if (!it) return;
+      codeEl.value = it.getAttribute('data-v');
+      box.classList.remove('open');
+      codeEl.blur();
+      refresh();
+    }});
+    document.addEventListener('click', function (e) {{ if (!e.target.closest('.ac')) box.classList.remove('open'); }});
+  }}
+  function imgUrl(dl) {{
+    const code = (codeEl.value || 'VAC-001').trim();
+    const logo = logoEl.checked ? 'mastercorp' : '0';
+    let u = '/qr/' + encodeURIComponent(SLUG) + '/img.png?code=' + encodeURIComponent(code)
+          + '&logo=' + logo + '&base=' + encodeURIComponent(BASE);
+    if (dl) u += '&download=1';
+    return u;
+  }}
+  function refresh() {{
+    const code = (codeEl.value || 'VAC-001').trim();
+    qr.src = imgUrl(false);
+    dl.href = imgUrl(true);
+    urlEl.textContent = SUB ? (BASE + '/e/' + code) : (BASE + '/e/' + SLUG + '/' + code);
+  }}
+  codeEl.addEventListener('input', refresh);
+  logoEl.addEventListener('change', refresh);
+  // Copiar al portapapeles con feedback verde.
+  function copyText(text, btn) {{
+    function done() {{ btn.classList.add('ok'); setTimeout(function () {{ btn.classList.remove('ok'); }}, 1200); }}
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(function () {{}});
+    else {{ const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try {{ document.execCommand('copy'); }} catch (e) {{}} document.body.removeChild(t); done(); }}
+  }}
+  document.getElementById('copyUrl').addEventListener('click', function () {{ copyText(document.getElementById('url').textContent, this); }});
+  document.getElementById('copyFixed').addEventListener('click', function () {{ copyText(document.getElementById('urlFixed').textContent, this); }});
+  // Detección de móvil: solo ahí usamos el share nativo (→ Guardar en Fotos). En PC, descarga directa.
+  const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && window.matchMedia('(pointer:coarse)').matches);
+  function downloadBlob(blob, filename) {{
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () {{ URL.revokeObjectURL(a.href); }}, 4000);
+  }}
+  async function saveImage(url, filename, btn) {{
+    try {{
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      if (IS_MOBILE && navigator.canShare) {{
+        const file = new File([blob], filename, {{ type: 'image/png' }});
+        if (navigator.canShare({{ files: [file] }})) {{ await navigator.share({{ files: [file], title: filename }}); }}
+        else {{ downloadBlob(blob, filename); }}
+      }} else {{
+        downloadBlob(blob, filename); // PC: descarga directa
+      }}
+      if (btn) {{ btn.classList.add('ok'); setTimeout(function () {{ btn.classList.remove('ok'); }}, 1200); }}
+    }} catch (e) {{}}
+  }}
+  document.getElementById('saveQr').addEventListener('click', function () {{
+    const code = (codeEl.value || 'VAC-001').trim();
+    saveImage(imgUrl(false), 'QR-' + code + '.png', this);
+  }});
+  document.getElementById('saveFixed').addEventListener('click', function () {{
+    saveImage('/qr/' + encodeURIComponent(SLUG) + '/fixed.png?base=' + encodeURIComponent(BASE), 'QR-housekeeping.png', this);
+  }});
+  acWire();
+  refresh();
+  setLang('en'); // default inglés al cargar
+</script>
+</body></html>";
+    }
+
     private static string NotFoundHtml(string codigo) =>
-        Layout("No encontrado",
-            $@"<div class=""card""><h1>Activo no encontrado</h1>
-<div class=""muted"">No existe un activo con código <code>{WebUtility.HtmlEncode(codigo)}</code> para este cliente.</div></div>");
+        Layout("Not found",
+            $@"<div class=""card""><h1>Equipment not found</h1>
+<div class=""muted"">There is no equipment with code <code>{WebUtility.HtmlEncode(codigo)}</code> for this client.</div></div>");
 }

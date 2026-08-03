@@ -43,9 +43,9 @@ public static class DemoSeeder
             await db.SaveChangesAsync();
         }
 
-        // Sembrar hasta 12 aspiradoras (VAC-001..VAC-012).
+        // Sembrar hasta 16 vacuums (VAC-001..VAC-016).
         var nAssets = await db.Assets.CountAsync(a => a.AssetTypeId == tipo.Id);
-        for (var i = nAssets; i < 12; i++)
+        for (var i = nAssets; i < 16; i++)
         {
             tipo.CorrelativoActual += 1;
             db.Assets.Add(new Asset
@@ -65,12 +65,17 @@ public static class DemoSeeder
             await db.SaveChangesAsync();
         }
 
-        // Data FAKE de check-ins del último mes (para la página de KPIs).
-        if (!await db.StatusCheckins.AnyAsync())
+        // Sembrado de reportes fake DESACTIVADO (producción arranca limpio). Poner en true
+        // solo si se quiere volver a poblar el dashboard con data de demo.
+        const bool seedFakeReports = false;
+
+        // Data FAKE de check-ins por activo del último mes (para la página de KPIs).
+        // Los estados "no disponible" ya NO viven aquí: tienen su propia tabla/flujo.
+        if (seedFakeReports && !await db.StatusCheckins.AnyAsync())
         {
             var codes = await db.Assets.Select(a => a.Codigo).OrderBy(c => c).ToListAsync();
             var faults = new[] { "Low suction", "Damaged cable", "Won't turn on", "Broken wheel", "Overheating", "Strange noise" };
-            var weights = new[] { ("operational", 66), ("AMedias", 12), ("NoFunciona", 7), ("unavailable", 15) };
+            var weights = new[] { ("operational", 68), ("AMedias", 20), ("NoFunciona", 12) };
             var totalW = weights.Sum(w => w.Item2);
             var rnd = new Random(20260728);
             var list = new List<StatusCheckin>();
@@ -101,6 +106,38 @@ public static class DemoSeeder
                 }
             }
             db.StatusCheckins.AddRange(list);
+            await db.SaveChangesAsync();
+        }
+
+        // Data FAKE de reportes de "equipo no disponible" (QR fijo del cuarto de housekeeping).
+        if (seedFakeReports && !await db.UnavailableReports.AnyAsync())
+        {
+            var reasons = new[]
+            {
+                "No hay aspiradoras disponibles en el piso 3",
+                "Todas las aspiradoras están en uso",
+                "Falta una aspiradora en el clóset de suministros",
+                "Aspiradora prestada a otro turno",
+                "No quedan aspiradoras operativas para el turno noche"
+            };
+            var rnd2 = new Random(20260729);
+            var ureps = new List<UnavailableReport>();
+            for (var d = 0; d < 30; d++)
+            {
+                var day = DateTime.Now.Date.AddDays(-d);
+                var perDay = rnd2.Next(0, 4); // algunos días sin reportes
+                for (var k = 0; k < perDay; k++)
+                {
+                    ureps.Add(new UnavailableReport
+                    {
+                        EmployeeName = Empleados[rnd2.Next(Empleados.Length)],
+                        EquipmentType = "Vacuum",
+                        Nota = rnd2.Next(4) == 0 ? null : reasons[rnd2.Next(reasons.Length)],
+                        CreatedAt = day.AddHours(rnd2.Next(6, 20)).AddMinutes(rnd2.Next(60))
+                    });
+                }
+            }
+            db.UnavailableReports.AddRange(ureps);
             await db.SaveChangesAsync();
         }
     }

@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<ReportPhoto> ReportPhotos => Set<ReportPhoto>();
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<StatusCheckin> StatusCheckins => Set<StatusCheckin>();
+    public DbSet<UnavailableReport> UnavailableReports => Set<UnavailableReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,6 +66,14 @@ public class AppDbContext : DbContext
             e.Property(x => x.EmployeeName).HasMaxLength(200).IsRequired();
             e.Property(x => x.AssetCodigo).HasMaxLength(40).IsRequired();
             e.Property(x => x.EstadoKey).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Nota).HasMaxLength(2000);
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<UnavailableReport>(e =>
+        {
+            e.Property(x => x.EmployeeName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.EquipmentType).HasMaxLength(100).IsRequired();
             e.Property(x => x.Nota).HasMaxLength(2000);
             e.HasIndex(x => new { x.TenantId, x.CreatedAt });
         });

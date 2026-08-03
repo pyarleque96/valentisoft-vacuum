@@ -47,23 +47,29 @@ public class SkiaQrRenderer : IQrRenderer
             }
         }
 
-        // 3) Logo central opcional con recuadro blanco de respaldo (~22% del lado).
+        // 3) Logo central opcional. El recuadro blanco (~28% del lado) es mayor que el
+        //    logo (~19%), de modo que queda un margen interno y el logo "respira".
+        //    28% está dentro de la tolerancia del nivel de corrección H (~30%).
         if (logoPng is { Length: > 0 })
         {
             using var logo = SKBitmap.Decode(logoPng);
             if (logo is not null)
             {
-                var logoSide = (int)(side * 0.22);
-                var pad = logoSide / 6;
                 var cx = side / 2f;
                 var cy = side / 2f;
-                var boxRect = new SKRect(cx - logoSide / 2f - pad, cy - logoSide / 2f - pad,
-                                         cx + logoSide / 2f + pad, cy + logoSide / 2f + pad);
-                using (var white = new SKPaint { Color = SKColors.White, Style = SKPaintStyle.Fill })
-                    canvas.DrawRect(boxRect, white);
+                var boxSide = side * 0.28f;   // recuadro blanco de respaldo
+                var boxRect = new SKRect(cx - boxSide / 2f, cy - boxSide / 2f,
+                                         cx + boxSide / 2f, cy + boxSide / 2f);
+                using (var white = new SKPaint { Color = SKColors.White, Style = SKPaintStyle.Fill, IsAntialias = true })
+                    canvas.DrawRoundRect(boxRect, boxSide * 0.12f, boxSide * 0.12f, white);
 
-                var logoRect = new SKRect(cx - logoSide / 2f, cy - logoSide / 2f,
-                                          cx + logoSide / 2f, cy + logoSide / 2f);
+                // Logo centrado, más pequeño que el recuadro (deja margen interno).
+                // Conserva la relación de aspecto para no deformar el logo.
+                var maxLogo = side * 0.19f;
+                var ar = logo.Height == 0 ? 1f : (float)logo.Width / logo.Height;
+                float lw = maxLogo, lh = maxLogo;
+                if (ar >= 1f) lh = maxLogo / ar; else lw = maxLogo * ar;
+                var logoRect = new SKRect(cx - lw / 2f, cy - lh / 2f, cx + lw / 2f, cy + lh / 2f);
                 canvas.DrawBitmap(logo, logoRect, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
             }
         }
