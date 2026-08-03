@@ -207,12 +207,12 @@ public class DemoController : ControllerBase
 
     private Guid Tid => _tenant.TenantId ?? Guid.Empty;
 
-    // Generador de QR de un SITE (panel admin).
+    // Generador de QR de un SITE (panel admin). Acepta guid o slug.
     [Authorize(Roles = "admin")]
-    [HttpGet("/admin/sites/{id:guid}/qr")]
-    public async Task<IActionResult> QrGenerator(Guid id)
+    [HttpGet("/admin/sites/{key}/qr")]
+    public async Task<IActionResult> QrGenerator(string key)
     {
-        var (tenant, site) = await ResolveSiteInTenantAsync(id);
+        var (tenant, site) = await ResolveSiteInTenantAsync(key);
         if (tenant is null || site is null) return NotFound();
 
         var codes = await _db.Assets.IgnoreQueryFilters()
@@ -243,10 +243,12 @@ public class DemoController : ControllerBase
         return File(pdf, "application/pdf");
     }
 
-    // Resuelve un site por id validando que pertenezca al tenant del subdominio (admin).
-    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site)> ResolveSiteInTenantAsync(Guid id)
+    // Resuelve un site por clave (guid o slug) validando que pertenezca al tenant (admin).
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site)> ResolveSiteInTenantAsync(string key)
     {
-        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id && s.TenantId == Tid);
+        var site = Guid.TryParse(key, out var gid)
+            ? await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == gid && s.TenantId == Tid)
+            : await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Slug == key && s.TenantId == Tid);
         if (site is null) return (null, null);
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
         return (tenant, site);
@@ -360,9 +362,9 @@ public class DemoController : ControllerBase
     }
 
     // ---------- Dashboard de KPIs por SITE (panel admin) ----------
-    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadSiteCheckinsAsync(Guid siteId)
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadSiteCheckinsAsync(string key)
     {
-        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == siteId && s.TenantId == Tid);
+        var (_, site) = await ResolveSiteInTenantAsync(key);
         if (site is null) return (null, null, new(), new());
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
         var since = DateTime.Now.Date.AddDays(-29);
@@ -380,20 +382,20 @@ public class DemoController : ControllerBase
     }
 
     [Authorize(Roles = "admin")]
-    [HttpGet("/admin/sites/{id:guid}/reports")]
-    public async Task<IActionResult> KpiPage(Guid id, [FromQuery] string? period)
+    [HttpGet("/admin/sites/{key}/reports")]
+    public async Task<IActionResult> KpiPage(string key, [FromQuery] string? period)
     {
-        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(id);
+        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(key);
         if (tenant is null || site is null) return NotFound();
         var model = Kpi.Kpi.Compute($"{tenant.Nombre} · {site.Name}", list, unav, DateTime.Now, period ?? "daily");
-        return Content(Kpi.KpiHtml.Render(model, id.ToString()), "text/html; charset=utf-8");
+        return Content(Kpi.KpiHtml.Render(model, site.Slug), "text/html; charset=utf-8");
     }
 
     [Authorize(Roles = "admin")]
-    [HttpGet("/admin/sites/{id:guid}/reports/pdf")]
-    public async Task<IActionResult> KpiPdfPreview(Guid id, [FromQuery] string? period)
+    [HttpGet("/admin/sites/{key}/reports/pdf")]
+    public async Task<IActionResult> KpiPdfPreview(string key, [FromQuery] string? period)
     {
-        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(id);
+        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(key);
         if (tenant is null || site is null) return NotFound();
         var model = Kpi.Kpi.Compute($"{tenant.Nombre} · {site.Name}", list, unav, DateTime.Now, period ?? "daily");
         return File(Kpi.KpiPdf.Render(model), "application/pdf");

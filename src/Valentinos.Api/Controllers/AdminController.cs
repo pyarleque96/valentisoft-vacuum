@@ -42,6 +42,12 @@ public class AdminController : ControllerBase, IActionFilter
     [NonAction]
     public void OnActionExecuted(ActionExecutedContext context) { }
 
+    // Resuelve un site por su clave (guid o slug), validando el tenant.
+    private Task<Site?> FindSiteAsync(string key) =>
+        Guid.TryParse(key, out var gid)
+            ? _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == gid && s.TenantId == Tid)
+            : _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Slug == key && s.TenantId == Tid);
+
     // ---------- Lista de sites ----------
     [HttpGet("/admin/sites")]
     public async Task<IActionResult> Sites()
@@ -79,12 +85,12 @@ public class AdminController : ControllerBase, IActionFilter
         return Redirect("/admin/sites");
     }
 
-    // ---------- Configurar un site (editar + vacuums) ----------
-    [HttpGet("/admin/sites/{id:guid}")]
-    public async Task<IActionResult> SiteConfig(Guid id)
+    // ---------- Configurar un site (editar + vacuums). Acepta guid o slug. ----------
+    [HttpGet("/admin/sites/{key}")]
+    public async Task<IActionResult> SiteConfig(string key)
     {
         var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
-        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id && s.TenantId == Tid);
+        var site = await FindSiteAsync(key);
         if (tenant is null || site is null) return NotFound();
 
         var vacuums = await _db.Assets.IgnoreQueryFilters()
@@ -94,27 +100,27 @@ public class AdminController : ControllerBase, IActionFilter
         return Content(SiteConfigHtml(tenant.Nombre, site, vacuums), "text/html; charset=utf-8");
     }
 
-    [HttpPost("/admin/sites/{id:guid}")]
-    public async Task<IActionResult> SaveSite(Guid id, [FromForm] string? code, [FromForm] string? name, [FromForm] string? cc)
+    [HttpPost("/admin/sites/{key}")]
+    public async Task<IActionResult> SaveSite(string key, [FromForm] string? code, [FromForm] string? name, [FromForm] string? cc)
     {
-        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id && s.TenantId == Tid);
+        var site = await FindSiteAsync(key);
         if (site is null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(code)) site.Code = code.Trim();
         if (!string.IsNullOrWhiteSpace(name)) site.Name = name.Trim();
         site.CcEmails = NormalizeEmails(cc);
         await _db.SaveChangesAsync();
-        return Redirect($"/admin/sites/{id}");
+        return Redirect($"/admin/sites/{site.Slug}");
     }
 
     // ---------- Agregar vacuums a un site ----------
-    [HttpPost("/admin/sites/{id:guid}/vacuums")]
-    public async Task<IActionResult> AddVacuums(Guid id, [FromForm] int count)
+    [HttpPost("/admin/sites/{key}/vacuums")]
+    public async Task<IActionResult> AddVacuums(string key, [FromForm] int count)
     {
-        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id && s.TenantId == Tid);
+        var site = await FindSiteAsync(key);
         if (site is null) return NotFound();
         count = Math.Clamp(count, 0, 200);
-        if (count == 0) return Redirect($"/admin/sites/{id}");
+        if (count == 0) return Redirect($"/admin/sites/{site.Slug}");
 
         var tipo = await _db.AssetTypes.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.TenantId == Tid && t.Prefijo == "VAC");
         if (tipo is null)
@@ -140,7 +146,7 @@ public class AdminController : ControllerBase, IActionFilter
             });
         }
         await _db.SaveChangesAsync();
-        return Redirect($"/admin/sites/{id}");
+        return Redirect($"/admin/sites/{site.Slug}");
     }
 
     // ---------- helpers ----------
@@ -187,8 +193,8 @@ public class AdminController : ControllerBase, IActionFilter
               <td>{n}</td>
               <td class=""cccell"">{cc}</td>
               <td class=""acts"">
-                <a class=""ico"" href=""/admin/sites/{s.Id}"" title=""Configure"" aria-label=""Configure"">{gear}</a>
-                <a class=""ico"" href=""/admin/sites/{s.Id}/reports"" title=""Dashboard"" aria-label=""Dashboard"">{dash}</a>
+                <a class=""ico"" href=""/admin/sites/{s.Slug}"" title=""Configure"" aria-label=""Configure"">{gear}</a>
+                <a class=""ico"" href=""/admin/sites/{s.Slug}/reports"" title=""Dashboard"" aria-label=""Dashboard"">{dash}</a>
               </td>
             </tr>");
         }
@@ -228,13 +234,13 @@ public class AdminController : ControllerBase, IActionFilter
   <div class=""crumb""><a href=""/admin/sites"">← Sites</a></div>
 
   <div class=""siteacts"">
-    <a href=""/admin/sites/{site.Id}/qr"">{qrIco} QR codes</a>
-    <a href=""/admin/sites/{site.Id}/reports"">{dashIco} Dashboard (KPIs)</a>
+    <a href=""/admin/sites/{site.Slug}/qr"">{qrIco} QR codes</a>
+    <a href=""/admin/sites/{site.Slug}/reports"">{dashIco} Dashboard (KPIs)</a>
   </div>
 
   <div class=""card"">
     <h2>{WebUtility.HtmlEncode(site.Name)} <span class=""mono muted"">/{WebUtility.HtmlEncode(site.Slug)}</span></h2>
-    <form method=""post"" action=""/admin/sites/{site.Id}"" class=""grid"">
+    <form method=""post"" action=""/admin/sites/{site.Slug}"" class=""grid"">
       <div><label>Code</label><input name=""code"" value=""{WebUtility.HtmlEncode(site.Code)}"" required></div>
       <div><label>Name</label><input name=""name"" value=""{WebUtility.HtmlEncode(site.Name)}"" required></div>
       <div class=""full""><label>Recipients (CC) — comma separated</label>
@@ -246,7 +252,7 @@ public class AdminController : ControllerBase, IActionFilter
   <div class=""card"">
     <h2>Vacuums ({vacuums.Count})</h2>
     <div class=""chips"">{chips}</div>
-    <form method=""post"" action=""/admin/sites/{site.Id}/vacuums"" class=""addrow"">
+    <form method=""post"" action=""/admin/sites/{site.Slug}/vacuums"" class=""addrow"">
       <label>Add</label>
       <input type=""number"" name=""count"" value=""1"" min=""1"" max=""200"" style=""width:90px"">
       <span class=""muted"">vacuums (numbered continuing from the last)</span>
