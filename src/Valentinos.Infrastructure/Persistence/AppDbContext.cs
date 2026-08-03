@@ -24,6 +24,8 @@ public class AppDbContext : DbContext
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<StatusCheckin> StatusCheckins => Set<StatusCheckin>();
     public DbSet<UnavailableReport> UnavailableReports => Set<UnavailableReport>();
+    public DbSet<Site> Sites => Set<Site>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -49,6 +51,7 @@ public class AppDbContext : DbContext
             e.Property(a => a.Codigo).HasMaxLength(40).IsRequired();
             e.Property(a => a.Ubicacion).HasMaxLength(200);
             e.HasIndex(a => new { a.TenantId, a.Codigo }).IsUnique();
+            e.HasIndex(a => a.SiteId);
             e.HasOne<AssetType>()
              .WithMany()
              .HasForeignKey(a => a.AssetTypeId)
@@ -61,6 +64,25 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.TenantId, x.Nombre });
         });
 
+        modelBuilder.Entity<Site>(e =>
+        {
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Slug).HasMaxLength(60).IsRequired();
+            e.Property(x => x.CcEmails).HasMaxLength(1000);
+            e.HasIndex(x => x.Slug).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.Code });
+        });
+
+        modelBuilder.Entity<User>(e =>
+        {
+            e.Property(x => x.Email).HasMaxLength(256).IsRequired();
+            e.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Role).HasMaxLength(50).IsRequired();
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.HasIndex(x => x.Email).IsUnique();
+        });
+
         modelBuilder.Entity<StatusCheckin>(e =>
         {
             e.Property(x => x.EmployeeName).HasMaxLength(200).IsRequired();
@@ -68,6 +90,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.EstadoKey).HasMaxLength(30).IsRequired();
             e.Property(x => x.Nota).HasMaxLength(2000);
             e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+            e.HasIndex(x => new { x.SiteId, x.CreatedAt });
         });
 
         modelBuilder.Entity<UnavailableReport>(e =>
@@ -76,6 +99,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.EquipmentType).HasMaxLength(100).IsRequired();
             e.Property(x => x.Nota).HasMaxLength(2000);
             e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+            e.HasIndex(x => new { x.SiteId, x.CreatedAt });
         });
 
         modelBuilder.Entity<Report>(e =>

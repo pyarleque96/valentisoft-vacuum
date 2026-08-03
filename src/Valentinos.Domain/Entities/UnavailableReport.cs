@@ -8,6 +8,7 @@ namespace Valentinos.Domain.Entities;
 public class UnavailableReport : BaseEntity, ITenantOwned
 {
     public Guid TenantId { get; set; }
+    public Guid SiteId { get; set; }        // site donde se reportó
     public string EmployeeName { get; set; } = string.Empty;
     public string EquipmentType { get; set; } = "Vacuum";
     public string? Nota { get; set; }

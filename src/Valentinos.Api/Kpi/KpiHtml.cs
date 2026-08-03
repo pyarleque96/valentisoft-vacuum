@@ -160,7 +160,7 @@ public static class KpiHtml
     <div class=""head"">
       <div class=""logo""></div>
       <div class=""t""><h1 data-i18n=""title"">KPI Report — Vacuum Control</h1>
-        <div class=""sub"">{H(m.TenantName)} · Housekeeping · {H(m.GeneratedAt.ToString("g"))}</div></div>
+        <div class=""sub"">{H(m.TenantName)} · Housekeeping · {H(m.GeneratedAt.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture))}</div></div>
       <div class=""langs"">
         <button type=""button"" class=""flag"" id=""flag-en"" onclick=""setLang('en')""><img src=""/images/flags/us-circle.svg"" alt=""EN""></button>
         <button type=""button"" class=""flag"" id=""flag-es"" onclick=""setLang('es')""><img src=""/images/flags/es-circle.svg"" alt=""ES""></button>

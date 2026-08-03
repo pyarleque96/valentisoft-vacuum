@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Abstractions;
 using Valentinos.Domain.Entities;
 using Valentinos.Domain.Enums;
+using Valentinos.Infrastructure.Auth;
 
 namespace Valentinos.Infrastructure.Persistence;
 
@@ -43,7 +44,38 @@ public static class DemoSeeder
             await db.SaveChangesAsync();
         }
 
-        // Sembrar hasta 16 vacuums (VAC-001..VAC-016).
+        // ---- Sites: Site 069 (con sus vacuums + ramces CC) + 3 sites nuevos ----
+        // Slugs fijos (idempotente): los definidos aquí no cambian al reiniciar.
+        var seedSites = new[]
+        {
+            (Code: "069", Name: "Site 069", Slug: "site-XjUS3", Cc: "ramces.rodriguez@mastercorp.com"),
+            (Code: "002", Name: "Site 002", Slug: "site-Kp7Qm", Cc: (string?)null),
+            (Code: "003", Name: "Site 003", Slug: "site-Ra9Zt", Cc: (string?)null),
+            (Code: "004", Name: "Site 004", Slug: "site-Bn4Wc", Cc: (string?)null),
+        };
+        foreach (var s in seedSites)
+        {
+            if (!await db.Sites.AnyAsync(x => x.Slug == s.Slug))
+                db.Sites.Add(new Site { Code = s.Code, Name = s.Name, Slug = s.Slug, CcEmails = s.Cc });
+        }
+        await db.SaveChangesAsync();
+        var site069 = await db.Sites.FirstAsync(x => x.Slug == "site-XjUS3");
+
+        // ---- Usuario admin del tenant (Chris David). Password hasheada (PBKDF2). ----
+        // NOTA: credencial semilla de demo; cambiar en un entorno real.
+        if (!await db.Users.AnyAsync(u => u.Email == "christopher.davey@mastercorp.com"))
+        {
+            db.Users.Add(new User
+            {
+                Email = "christopher.davey@mastercorp.com",
+                DisplayName = "Chris David",
+                Role = "admin",
+                PasswordHash = PasswordHasher.Hash("ChrisD123*")
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Sembrar hasta 16 vacuums (VAC-001..VAC-016) en el Site 069.
         var nAssets = await db.Assets.CountAsync(a => a.AssetTypeId == tipo.Id);
         for (var i = nAssets; i < 16; i++)
         {
@@ -51,11 +83,20 @@ public static class DemoSeeder
             db.Assets.Add(new Asset
             {
                 AssetTypeId = tipo.Id,
+                SiteId = site069.Id,
                 Codigo = $"{tipo.Prefijo}-{tipo.CorrelativoActual:D3}",
                 Estado = AssetEstado.Activo
             });
         }
         await db.SaveChangesAsync();
+
+        // Backfill: vacuums existentes sin site (SiteId vacío) -> Site 069.
+        var huerfanos = await db.Assets.Where(a => a.SiteId == Guid.Empty).ToListAsync();
+        if (huerfanos.Count > 0)
+        {
+            foreach (var a in huerfanos) a.SiteId = site069.Id;
+            await db.SaveChangesAsync();
+        }
 
         // Empleados de MasterCorp (para el autocompletar del formulario).
         if (!await db.Employees.AnyAsync())

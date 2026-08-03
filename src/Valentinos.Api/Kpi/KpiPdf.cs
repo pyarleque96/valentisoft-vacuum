@@ -80,7 +80,7 @@ public static class KpiPdf
 
             // ---------- Encabezado ----------
             Text($"{pName} KPI Report — Vacuum Control", fTitle, ink, M); y += 20;
-            Text($"{m.TenantName} · Housekeeping · {m.PeriodLabel} · {m.GeneratedAt:g}", fSmall, gray, M); y += 22;
+            Text($"{m.TenantName} · Housekeeping · {m.PeriodLabel} · {m.GeneratedAt.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture)}", fSmall, gray, M); y += 22;
 
             // ---------- Distribución: donut + leyenda ----------
             H2("Status distribution");

@@ -7,6 +7,7 @@ namespace Valentinos.Domain.Entities;
 public class StatusCheckin : BaseEntity, ITenantOwned
 {
     public Guid TenantId { get; set; }
+    public Guid SiteId { get; set; }        // site donde se hizo el check-in
     public string EmployeeName { get; set; } = string.Empty;
     public string AssetCodigo { get; set; } = string.Empty;
     public string EstadoKey { get; set; } = "operational"; // operational | AMedias | NoFunciona
