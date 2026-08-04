@@ -301,6 +301,50 @@ public class DemoController : ControllerBase
         return Content(UnavailableFormHtml(tenant.Nombre, siteSlug, tipos), "text/html; charset=utf-8");
     }
 
+    // ---------- Compatibilidad con QR impresos ANTES de los sites (sin slug) ----------
+    // Los QR del site 069 ya se imprimieron y pegaron apuntando al formato viejo:
+    //   por equipo:  {base}/e/{codigo}   ·   QR fijo housekeeping: {base}/f/hk
+    // (el tenant se infiere del subdominio; no llevaban slug de site). Estas rutas
+    // resuelven al site correspondiente del tenant para que esos QR sigan sirviendo
+    // sin reimprimir. Los enlaces internos (form, POST) que sirve el HTML ya usan el
+    // formato actual con slug, así que solo hacen falta estos dos entry points.
+
+    // Site "por defecto" del tenant = el más antiguo (el original, p. ej. 069).
+    private Task<Domain.Entities.Site?> DefaultSiteAsync() =>
+        _db.Sites.IgnoreQueryFilters()
+            .Where(s => s.TenantId == Tid)
+            .OrderBy(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+    // QR viejo por equipo: /e/{codigo} (sin slug). El código es único por site y los
+    // legacy sólo existen en el site original; se resuelve por (tenant, código).
+    [HttpGet("/e/{codigo}")]
+    public async Task<IActionResult> IntroLegacy(string codigo)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
+        if (tenant is null) return NotFound();
+        var asset = await _db.Assets.IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenant.Id && a.Codigo == codigo)
+            .OrderBy(a => a.CreatedAt).FirstOrDefaultAsync();
+        if (asset is null) return Content(NotFoundHtml(codigo), "text/html; charset=utf-8");
+        var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == asset.SiteId);
+        if (site is null) return NotFound();
+        var tipo = await _db.AssetTypes.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == asset.AssetTypeId);
+        return Content(IntroHtml(tenant.Nombre, EquipmentReportPath(site.Slug, codigo), codigo, tipo?.Nombre ?? "Equipment"),
+            "text/html; charset=utf-8");
+    }
+
+    // QR fijo viejo del cuarto de housekeeping: /f/hk (sin slug) → site por defecto.
+    [HttpGet("/f/hk")]
+    public async Task<IActionResult> UnavailableIntroLegacy()
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
+        if (tenant is null) return NotFound();
+        var site = await DefaultSiteAsync();
+        if (site is null) return NotFound();
+        return Content(UnavailableIntroHtml(tenant.Nombre, site.Slug), "text/html; charset=utf-8");
+    }
+
     // Registra un reporte de equipo no disponible (con su SiteId).
     [HttpPost("/api/public/{siteSlug}/unavailable")]
     public async Task<IActionResult> ReportUnavailable(string siteSlug,
