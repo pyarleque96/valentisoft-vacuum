@@ -163,25 +163,30 @@ public class AdminController : ControllerBase, IActionFilter
         return parts.Length == 0 ? null : string.Join(", ", parts);
     }
 
+    // Rutas top-level reservadas: un slug no puede colisionar con ellas.
+    private static readonly HashSet<string> ReservedSlugs = new(StringComparer.OrdinalIgnoreCase)
+        { "admin", "login", "logout", "api", "qr", "e", "f", "images", "favicon" };
+
     private async Task<string> UniqueSlugAsync()
     {
         const string chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         var rnd = new Random();
         for (var attempt = 0; attempt < 20; attempt++)
         {
-            var sb = new StringBuilder("site-");
-            for (var i = 0; i < 5; i++) sb.Append(chars[rnd.Next(chars.Length)]);
+            var sb = new StringBuilder();
+            for (var i = 0; i < 6; i++) sb.Append(chars[rnd.Next(chars.Length)]);
             var slug = sb.ToString();
+            if (ReservedSlugs.Contains(slug)) continue;
             if (!await _db.Sites.IgnoreQueryFilters().AnyAsync(s => s.Slug == slug)) return slug;
         }
-        return "site-" + Guid.NewGuid().ToString("N")[..6];
+        return Guid.NewGuid().ToString("N")[..8];
     }
 
     // ---------- HTML ----------
     private string SitesHtml(string tenantNombre, List<Site> sites, Dictionary<Guid, int> counts)
     {
         const string gear = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""12"" r=""3""></circle><path d=""M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z""></path></svg>";
-        const string dash = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""9""></rect><rect x=""14"" y=""3"" width=""7"" height=""5""></rect><rect x=""14"" y=""12"" width=""7"" height=""9""></rect><rect x=""3"" y=""16"" width=""7"" height=""5""></rect></svg>";
+        const string dash = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><line x1=""18"" y1=""20"" x2=""18"" y2=""10""></line><line x1=""12"" y1=""20"" x2=""12"" y2=""4""></line><line x1=""6"" y1=""20"" x2=""6"" y2=""14""></line></svg>";
         var rows = new StringBuilder();
         foreach (var s in sites)
         {
@@ -229,7 +234,7 @@ public class AdminController : ControllerBase, IActionFilter
         if (vacuums.Count == 0) chips.Append(@"<span class=""muted"">No vacuums yet.</span>");
 
         const string qrIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""3"" width=""7"" height=""7""></rect><rect x=""3"" y=""14"" width=""7"" height=""7""></rect><line x1=""14"" y1=""14"" x2=""14"" y2=""21""></line><line x1=""21"" y1=""14"" x2=""21"" y2=""21""></line><line x1=""17"" y1=""17"" x2=""17"" y2=""17""></line></svg>";
-        const string dashIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""9""></rect><rect x=""14"" y=""3"" width=""7"" height=""5""></rect><rect x=""14"" y=""12"" width=""7"" height=""9""></rect><rect x=""3"" y=""16"" width=""7"" height=""5""></rect></svg>";
+        const string dashIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><line x1=""18"" y1=""20"" x2=""18"" y2=""10""></line><line x1=""12"" y1=""20"" x2=""12"" y2=""4""></line><line x1=""6"" y1=""20"" x2=""6"" y2=""14""></line></svg>";
         var body = $@"
   <div class=""crumb""><a href=""/admin/sites"">← Sites</a></div>
 
