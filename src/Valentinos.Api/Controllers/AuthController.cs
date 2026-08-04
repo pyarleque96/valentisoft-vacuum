@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.RateLimiting;
 using Valentinos.Api.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -20,15 +21,15 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly ILogger<AuthController> _logger;
-    private readonly Valentinos.Application.Notifications.IEmailSender _email;
+    private readonly IServiceScopeFactory _scopes;
 
     public AuthController(AppDbContext db, ITenantContext tenant, ILogger<AuthController> logger,
-        Valentinos.Application.Notifications.IEmailSender email)
+        IServiceScopeFactory scopes)
     {
         _db = db;
         _tenant = tenant;
         _logger = logger;
-        _email = email;
+        _scopes = scopes;
     }
 
     // Home del subdominio: si hay sesión -> panel de sites; si no -> login.
@@ -47,6 +48,7 @@ public class AuthController : ControllerBase
         return Content(LoginHtml(tenantName, error, reset is not null), "text/html; charset=utf-8");
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("/login")]
     public async Task<IActionResult> Login([FromForm] string? email, [FromForm] string? password, [FromForm] string? remember)
     {
@@ -70,6 +72,7 @@ public class AuthController : ControllerBase
             new(ClaimTypes.Name, string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName),
             new(ClaimTypes.Role, user.Role),
             new("tenant", user.TenantId.ToString()),
+            new("stamp", user.SecurityStamp),
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var persistent = !string.IsNullOrEmpty(remember);
@@ -101,6 +104,7 @@ public class AuthController : ControllerBase
         Content(ForgotHtml(sent is not null), "text/html; charset=utf-8");
 
     // Genera y envía el código. Respuesta SIEMPRE igual (anti-enumeración de correos).
+    [EnableRateLimiting("auth")]
     [HttpPost("/forgot")]
     public async Task<IActionResult> Forgot([FromForm] string? email)
     {
@@ -118,13 +122,21 @@ public class AuthController : ControllerBase
                 await _db.SaveChangesAsync();
 
                 var tenantName = await CurrentTenantNameAsync();
-                try
+                // Envío en background (fire-and-forget con su propio scope): la respuesta HTTP
+                // no espera el correo, así el timing es igual exista o no el usuario.
+                var to = user.Email;
+                _ = Task.Run(async () =>
                 {
-                    await _email.SendAsync(new[] { user.Email }, AuthEmail.Subject(tenantName),
-                        AuthEmail.RenderResetCode(tenantName, code, CodeMinutes), isHtml: true);
-                    _logger.LogInformation("🔑 Código de reset enviado a {Email}", user.Email);
-                }
-                catch (Exception ex) { _logger.LogError(ex, "Fallo al enviar código de reset"); }
+                    try
+                    {
+                        using var scope = _scopes.CreateScope();
+                        var email = scope.ServiceProvider.GetRequiredService<Valentinos.Application.Notifications.IEmailSender>();
+                        await email.SendAsync(new[] { to }, AuthEmail.Subject(tenantName),
+                            AuthEmail.RenderResetCode(tenantName, code, CodeMinutes), isHtml: true);
+                        _logger.LogInformation("🔑 Código de reset enviado a {Email}", to);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Fallo al enviar código de reset"); }
+                });
             }
         }
         // Siempre a la página de reset (no revelamos si el correo existe).
@@ -135,6 +147,7 @@ public class AuthController : ControllerBase
     public IActionResult ResetPage([FromQuery] string? e, [FromQuery] string? error) =>
         Content(ResetHtml(e ?? "", error), "text/html; charset=utf-8");
 
+    [EnableRateLimiting("auth")]
     [HttpPost("/reset")]
     public async Task<IActionResult> Reset([FromForm] string? email, [FromForm] string? code, [FromForm] string? password)
     {
@@ -159,8 +172,10 @@ public class AuthController : ControllerBase
             return Redirect($"{back}&error=code");
         }
 
-        // Código válido: fija la nueva contraseña e invalida el código.
+        // Código válido: fija la nueva contraseña, invalida el código y regenera el sello
+        // de seguridad (invalida cualquier sesión/cookie anterior de este usuario).
         user.PasswordHash = PasswordHasher.Hash(pass);
+        user.SecurityStamp = Guid.NewGuid().ToString("N");
         user.ResetCodeHash = null;
         user.ResetCodeExpiresUtc = null;
         user.ResetCodeAttempts = 0;
@@ -219,7 +234,7 @@ public class AuthController : ControllerBase
     <div class=""brand"">
       <div class=""logo"" role=""img"" aria-label=""ValentiSoft""></div>
       <h1>Sign in</h1>
-      <div class=""sub"">{tenantH} · Housekeeping</div>
+      <div class=""sub"">{tenantH}</div>
     </div>
     {errBox}
     <label for=""email"">Email</label>

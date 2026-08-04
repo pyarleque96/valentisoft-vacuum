@@ -79,6 +79,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
             e.Property(x => x.Role).HasMaxLength(50).IsRequired();
             e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.SecurityStamp).HasMaxLength(64).IsRequired();
             e.Property(x => x.ResetCodeHash).HasMaxLength(500);
             e.HasIndex(x => x.Email).IsUnique();
         });

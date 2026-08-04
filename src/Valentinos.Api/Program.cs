@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -44,7 +45,28 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         o.Events = new CookieAuthenticationEvents
         {
             OnRedirectToLogin = ctx => { ctx.Response.Redirect(ctx.RedirectUri); return Task.CompletedTask; },
-            OnRedirectToAccessDenied = ctx => { ctx.Response.Redirect(ctx.RedirectUri); return Task.CompletedTask; }
+            OnRedirectToAccessDenied = ctx => { ctx.Response.Redirect(ctx.RedirectUri); return Task.CompletedTask; },
+            // Valida el sello de seguridad en cada request: si la contraseña cambió
+            // (stamp regenerado), las cookies emitidas antes quedan inválidas.
+            OnValidatePrincipal = async ctx =>
+            {
+                var stamp = ctx.Principal?.FindFirst("stamp")?.Value;
+                var uid = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (stamp is null || uid is null || !Guid.TryParse(uid, out var userId))
+                {
+                    ctx.RejectPrincipal();
+                    await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+                var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var current = await db.Users.IgnoreQueryFilters()
+                    .Where(u => u.Id == userId).Select(u => u.SecurityStamp).FirstOrDefaultAsync();
+                if (current is null || current != stamp)
+                {
+                    ctx.RejectPrincipal();
+                    await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                }
+            }
         };
     });
 builder.Services.AddAuthorization();
@@ -58,6 +80,18 @@ builder.Services.AddRateLimiter(options =>
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+    // Endpoints de autenticación (login / forgot / reset): límite por IP para frenar
+    // fuerza bruta y email-bombing.
+    options.AddPolicy("auth", httpContext =>
+    {
+        var key = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0
         });

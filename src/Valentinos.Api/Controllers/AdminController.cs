@@ -243,10 +243,11 @@ public class AdminController : ControllerBase, IActionFilter
 
   <div class=""card"">
     <h2>Site {WebUtility.HtmlEncode(site.Code)} <span class=""mono muted"">/{WebUtility.HtmlEncode(site.Slug)}</span></h2>
-    <form method=""post"" action=""/admin/sites/{site.Slug}"" class=""grid"">
+    <form id=""siteForm"" method=""post"" action=""/admin/sites/{site.Slug}"" class=""grid"">
       <div><label>Code</label><input name=""code"" value=""{WebUtility.HtmlEncode(site.Code)}"" required></div>
       <div class=""full""><label>Recipients (CC) — comma separated</label>
-        <input name=""cc"" value=""{WebUtility.HtmlEncode(site.CcEmails ?? "")}"" placeholder=""manager@company.com""></div>
+        <input id=""ccInput"" name=""cc"" value=""{WebUtility.HtmlEncode(site.CcEmails ?? "")}"" placeholder=""manager@company.com"">
+        <div class=""fielderr"" id=""ccErr""></div></div>
       <div class=""full""><button type=""submit"">Save changes</button></div>
     </form>
   </div>
@@ -282,6 +283,26 @@ public class AdminController : ControllerBase, IActionFilter
       bg.addEventListener('click', function (e) {{ if (e.target === bg) bg.classList.remove('open'); }});
       document.addEventListener('keydown', function (e) {{ if (e.key === 'Escape') bg.classList.remove('open'); }});
       document.getElementById('addConfirm').addEventListener('click', function () {{ form.submit(); }});
+    }})();
+    // Validación de Recipients (CC): emails separados por coma; si hay error, muestra ejemplo.
+    (function () {{
+      var f = document.getElementById('siteForm'), inp = document.getElementById('ccInput'), err = document.getElementById('ccErr');
+      var re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      function badEmails() {{
+        var raw = (inp.value || '').trim();
+        if (!raw) return [];
+        return raw.split(/[,;\n]/).map(function (s) {{ return s.trim(); }}).filter(Boolean).filter(function (p) {{ return !re.test(p); }});
+      }}
+      function clearErr() {{ err.classList.remove('show'); inp.classList.remove('invalid'); }}
+      inp.addEventListener('input', clearErr);
+      f.addEventListener('submit', function (e) {{
+        var bad = badEmails();
+        if (bad.length) {{
+          e.preventDefault();
+          err.innerHTML = 'Please enter valid emails separated by commas. Example: <code>manager@company.com, other@company.com</code>. Check: <b>' + bad.map(function (b) {{ return b.replace(/</g,'&lt;'); }}).join(', ') + '</b>';
+          err.classList.add('show'); inp.classList.add('invalid'); inp.focus();
+        }}
+      }});
     }})();
   </script>";
         return AdminLayout($"Site {site.Code} · {tenantNombre}", tenantNombre, body);
@@ -351,6 +372,9 @@ public class AdminController : ControllerBase, IActionFilter
   input {{ width:100%; padding:11px; border-radius:9px; border:1px solid #cbd5e1; font-size:15px; color:#1f2937; }}
   input:focus {{ outline:none; border-color:#1560A8; box-shadow:0 0 0 3px rgba(21,96,168,.15); }}
   input::placeholder {{ color:#cbd5e1; }}
+  input.invalid {{ border-color:#fca5a5; box-shadow:0 0 0 3px rgba(239,68,68,.12); }}
+  .fielderr {{ color:#b91c1c; font-size:12.5px; margin-top:6px; display:none; line-height:1.5; }}
+  .fielderr.show {{ display:block; }} .fielderr code {{ background:#fef2f2; padding:1px 5px; border-radius:5px; font-size:12px; }}
   .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }} .grid .full {{ grid-column:1/-1; }}
   button {{ background:#1560A8; color:#fff; border:0; border-radius:9px; padding:11px 18px; font-weight:700; font-size:14px; cursor:pointer; }}
   button:hover {{ background:#0f4c85; }}

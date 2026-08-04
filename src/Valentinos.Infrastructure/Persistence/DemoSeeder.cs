@@ -87,6 +87,11 @@ public static class DemoSeeder
         }
         await db.SaveChangesAsync();
 
+        // Backfill: usuarios sin SecurityStamp (rows previas a la migración) reciben uno.
+        foreach (var u in await db.Users.Where(x => x.SecurityStamp == null || x.SecurityStamp == "").ToListAsync())
+            u.SecurityStamp = Guid.NewGuid().ToString("N");
+        await db.SaveChangesAsync();
+
         // Sembrar hasta 16 vacuums (VAC-001..VAC-016) en el Site 069.
         var nAssets = await db.Assets.CountAsync(a => a.AssetTypeId == tipo.Id);
         for (var i = nAssets; i < 16; i++)
