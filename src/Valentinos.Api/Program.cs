@@ -35,7 +35,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         o.LoginPath = "/login";
         o.LogoutPath = "/logout";
         o.AccessDeniedPath = "/login";
-        o.ExpireTimeSpan = TimeSpan.FromHours(8);
+        o.ExpireTimeSpan = TimeSpan.FromDays(365); // sesión larga (deslizante); no expira en uso normal
         o.SlidingExpiration = true;
         o.Cookie.Name = "valentisoft.auth";
         o.Cookie.HttpOnly = true;

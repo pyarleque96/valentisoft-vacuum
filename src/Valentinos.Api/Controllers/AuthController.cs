@@ -75,13 +75,14 @@ public class AuthController : ControllerBase
             new("stamp", user.SecurityStamp),
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var persistent = !string.IsNullOrEmpty(remember);
+        // Sesión persistente y larga (1 año): no expira en uso normal. La invalidación
+        // sigue disponible vía SecurityStamp (reset de contraseña) y /logout.
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(identity),
             new AuthenticationProperties
             {
-                IsPersistent = persistent,
-                ExpiresUtc = persistent ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8)
+                IsPersistent = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddDays(365)
             });
 
         return Redirect("/admin/sites");
