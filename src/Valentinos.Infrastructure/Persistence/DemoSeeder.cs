@@ -67,19 +67,25 @@ public static class DemoSeeder
         await db.SaveChangesAsync();
         var site069 = await db.Sites.FirstAsync(x => x.Code == "069");
 
-        // ---- Usuario admin del tenant (Chris David). Password hasheada (PBKDF2). ----
-        // NOTA: credencial semilla de demo; cambiar en un entorno real.
-        if (!await db.Users.AnyAsync(u => u.Email == "christopher.davey@mastercorp.com"))
+        // ---- Usuarios admin del tenant. Password hasheada (PBKDF2). ----
+        // NOTA: credenciales semilla de demo; cambiar en un entorno real.
+        var seedAdmins = new[]
         {
-            db.Users.Add(new User
+            (Email: "christopher.davey@mastercorp.com", Name: "Chris David", Pass: "ChrisD123*"),
+            (Email: "ramces.rodriguez@mastercorp.com", Name: "Ramces Rodriguez", Pass: "RamcesR123*"),
+        };
+        foreach (var a in seedAdmins)
+        {
+            if (!await db.Users.AnyAsync(u => u.Email == a.Email))
             {
-                Email = "christopher.davey@mastercorp.com",
-                DisplayName = "Chris David",
-                Role = "admin",
-                PasswordHash = PasswordHasher.Hash("ChrisD123*")
-            });
-            await db.SaveChangesAsync();
+                db.Users.Add(new User
+                {
+                    Email = a.Email, DisplayName = a.Name, Role = "admin",
+                    PasswordHash = PasswordHasher.Hash(a.Pass)
+                });
+            }
         }
+        await db.SaveChangesAsync();
 
         // Sembrar hasta 16 vacuums (VAC-001..VAC-016) en el Site 069.
         var nAssets = await db.Assets.CountAsync(a => a.AssetTypeId == tipo.Id);

@@ -56,7 +56,7 @@ public class AdminController : ControllerBase, IActionFilter
         if (tenant is null) return Redirect("/login");
 
         var sites = await _db.Sites.IgnoreQueryFilters()
-            .Where(s => s.TenantId == Tid).OrderBy(s => s.Code).ToListAsync();
+            .Where(s => s.TenantId == Tid).OrderByDescending(s => s.Code).ToListAsync();
         var counts = await _db.Assets.IgnoreQueryFilters()
             .Where(a => a.TenantId == Tid && a.Estado == AssetEstado.Activo)
             .GroupBy(a => a.SiteId).Select(g => new { g.Key, N = g.Count() }).ToListAsync();
@@ -187,41 +187,43 @@ public class AdminController : ControllerBase, IActionFilter
     {
         const string gear = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""12"" r=""3""></circle><path d=""M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z""></path></svg>";
         const string dash = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><line x1=""18"" y1=""20"" x2=""18"" y2=""10""></line><line x1=""12"" y1=""20"" x2=""12"" y2=""4""></line><line x1=""6"" y1=""20"" x2=""6"" y2=""14""></line></svg>";
+        const string qr = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""3"" width=""7"" height=""7""></rect><rect x=""3"" y=""14"" width=""7"" height=""7""></rect><line x1=""14"" y1=""14"" x2=""14"" y2=""21""></line><line x1=""21"" y1=""14"" x2=""21"" y2=""21""></line><line x1=""17"" y1=""17"" x2=""17"" y2=""17""></line></svg>";
         var rows = new StringBuilder();
         foreach (var s in sites)
         {
             var n = counts.TryGetValue(s.Id, out var c) ? c : 0;
             var cc = string.IsNullOrWhiteSpace(s.CcEmails) ? "<span class=\"muted\">—</span>" : WebUtility.HtmlEncode(s.CcEmails);
             rows.Append($@"<tr>
-              <td><b>{WebUtility.HtmlEncode(s.Name)}</b><div class=""mono muted"">/{WebUtility.HtmlEncode(s.Slug)}</div></td>
-              <td class=""mono"">{WebUtility.HtmlEncode(s.Code)}</td>
+              <td><b class=""mono"">{WebUtility.HtmlEncode(s.Code)}</b></td>
               <td>{n}</td>
               <td class=""cccell"">{cc}</td>
               <td class=""acts"">
                 <a class=""ico"" href=""/admin/sites/{s.Slug}"" title=""Configure"" aria-label=""Configure"">{gear}</a>
-                <a class=""ico"" href=""/admin/sites/{s.Slug}/reports"" title=""Dashboard"" aria-label=""Dashboard"">{dash}</a>
+                <a class=""ico"" href=""/admin/sites/{s.Slug}/reports"" title=""KPIs"" aria-label=""KPIs"">{dash}</a>
+                <a class=""ico"" href=""/admin/sites/{s.Slug}/qr"" title=""QR codes"" aria-label=""QR codes"">{qr}</a>
               </td>
             </tr>");
         }
         if (sites.Count == 0)
-            rows.Append(@"<tr><td colspan=""5"" class=""muted"" style=""text-align:center;padding:20px"">No sites yet.</td></tr>");
+            rows.Append(@"<tr><td colspan=""4"" class=""muted"" style=""text-align:center;padding:20px"">No sites yet.</td></tr>");
 
         var body = $@"
   <div class=""card"">
     <h2>Sites</h2>
     <div class=""tblwrap""><table>
-      <thead><tr><th>Site</th><th>Code</th><th>Vacuums</th><th>Recipients (CC)</th><th></th></tr></thead>
+      <thead><tr><th>Site</th><th>Vacuums</th><th>Recipients (CC)</th><th></th></tr></thead>
       <tbody>{rows}</tbody>
     </table></div>
   </div>
 
-  <div class=""card"">
+  <!-- 'New site' oculto por ahora: inputs y submit deshabilitados. -->
+  <div class=""card"" style=""display:none"">
     <h2>New site</h2>
     <form method=""post"" action=""/admin/sites"" class=""grid"">
-      <div><label>Code</label><input name=""code"" placeholder=""e.g. 070"" required></div>
-      <div><label>Name</label><input name=""name"" placeholder=""e.g. Site 070""></div>
-      <div class=""full""><label>Recipients (CC) — comma separated</label><input name=""cc"" placeholder=""manager@company.com""></div>
-      <div class=""full""><button type=""submit"">Create site</button></div>
+      <div><label>Code</label><input name=""code"" placeholder=""e.g. 070"" disabled></div>
+      <div><label>Name</label><input name=""name"" placeholder=""e.g. Site 070"" disabled></div>
+      <div class=""full""><label>Recipients (CC) — comma separated</label><input name=""cc"" placeholder=""manager@company.com"" disabled></div>
+      <div class=""full""><button type=""submit"" disabled>Create site</button></div>
     </form>
   </div>";
         return AdminLayout($"Sites · {tenantNombre}", tenantNombre, body);
@@ -267,10 +269,22 @@ public class AdminController : ControllerBase, IActionFilter
         return AdminLayout($"{site.Name} · {tenantNombre}", tenantNombre, body);
     }
 
+    // Color de avatar estable por nombre (parece aleatorio pero es consistente por usuario).
+    private static string AvatarColor(string name)
+    {
+        var palette = new[] { "#1560A8", "#0f766e", "#7c3aed", "#be185d", "#c2410c", "#15803d", "#0369a1", "#b45309", "#4338ca", "#0d9488" };
+        var h = 0; foreach (var ch in name ?? "") h = (h * 31 + ch) & 0x7fffffff;
+        return palette[h % palette.Length];
+    }
+    private static string Initial(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : char.ToUpperInvariant(name.Trim()[0]).ToString();
+
     private string AdminLayout(string title, string tenantNombre, string body)
     {
         var tenantH = WebUtility.HtmlEncode(tenantNombre);
         var userH = WebUtility.HtmlEncode(UserName);
+        var avatarColor = AvatarColor(UserName);
+        var initial = WebUtility.HtmlEncode(Initial(UserName));
         return $@"<!doctype html>
 <html lang=""en""><head><meta charset=""utf-8"">
 <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
@@ -285,8 +299,20 @@ public class AdminController : ControllerBase, IActionFilter
   .logo {{ width:36px; height:36px; border-radius:9px; flex:0 0 auto; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/contain; border:1px solid #e5e9f0; }}
   .brand {{ font-weight:800; color:#1560A8; font-size:16px; }} .brand .sub {{ color:#64748b; font-size:12px; font-weight:500; }}
   .spacer {{ flex:1; }}
-  .who {{ color:#64748b; font-size:13px; }} .who b {{ color:#334155; }}
-  .out {{ margin-left:12px; text-decoration:none; color:#1560A8; font-weight:600; font-size:13px; }}
+  .user {{ position:relative; }}
+  .userbtn {{ display:flex; align-items:center; gap:10px; background:transparent; border:0; cursor:pointer; padding:4px; border-radius:999px; }}
+  .userbtn:hover {{ background:#f1f5f9; }}
+  .avatar {{ width:34px; height:34px; border-radius:50%; flex:0 0 auto; color:#fff; font-weight:700; font-size:14px;
+    display:flex; align-items:center; justify-content:center; }}
+  .uname {{ color:#334155; font-weight:600; font-size:14px; }}
+  .caret {{ color:#94a3b8; font-size:11px; }}
+  .dropdown {{ position:absolute; right:0; top:calc(100% + 6px); background:#fff; border:1px solid #e5e9f0; border-radius:12px;
+    box-shadow:0 12px 30px rgba(15,23,42,.15); min-width:170px; padding:6px; display:none; z-index:50; }}
+  .dropdown.open {{ display:block; }}
+  .dropdown a {{ display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; text-decoration:none; color:#334155; font-size:14px; font-weight:600; }}
+  .dropdown a:hover {{ background:#f1f5f9; color:#b91c1c; }}
+  .dropdown svg {{ width:17px; height:17px; }}
+  @media (max-width:560px) {{ .uname {{ display:none; }} }}
   .wrap {{ max-width:820px; margin:0 auto; padding:18px; }}
   .card {{ background:#fff; border:1px solid #e5e9f0; border-radius:14px; padding:18px; margin-bottom:14px; box-shadow:0 6px 20px rgba(15,23,42,.05); }}
   h2 {{ font-size:16px; margin:0 0 14px; color:#1560A8; }}
@@ -314,17 +340,37 @@ public class AdminController : ControllerBase, IActionFilter
   .chips {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }}
   .chip {{ background:#eaf1f9; color:#1560A8; border-radius:8px; padding:6px 10px; font-weight:600; font-size:13px; }}
   .addrow {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }} .addrow label {{ margin:0; }}
-  @media (max-width:560px) {{ .grid {{ grid-template-columns:1fr; }} }}
+  @media (max-width:560px) {{
+    .grid {{ grid-template-columns:1fr; }}
+    /* En móvil ocultar la columna Recipients (CC) del grid. */
+    .tblwrap th:nth-child(3), .tblwrap td:nth-child(3) {{ display:none; }}
+  }}
 </style></head>
 <body>
   <div class=""top""><div class=""topin"">
     <div class=""logo""></div>
-    <div class=""brand"">ValentiSoft<div class=""sub"">{tenantH} · Admin</div></div>
+    <div class=""brand"">{tenantH}<div class=""sub"">Admin</div></div>
     <div class=""spacer""></div>
-    <div class=""who"">Signed in as <b>{userH}</b></div>
-    <a class=""out"" href=""/logout"">Sign out</a>
+    <div class=""user"" id=""userMenu"">
+      <button class=""userbtn"" id=""userBtn"" aria-haspopup=""true"" aria-expanded=""false"">
+        <span class=""avatar"" style=""background:{avatarColor}"">{initial}</span>
+        <span class=""uname"">{userH}</span>
+        <span class=""caret"">▾</span>
+      </button>
+      <div class=""dropdown"" id=""userDrop"">
+        <a href=""/logout""><svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4""></path><polyline points=""16 17 21 12 16 7""></polyline><line x1=""21"" y1=""12"" x2=""9"" y2=""12""></line></svg> Sign out</a>
+      </div>
+    </div>
   </div></div>
   <div class=""wrap"">{body}</div>
+  <script>
+    (function () {{
+      var btn = document.getElementById('userBtn'), drop = document.getElementById('userDrop'), menu = document.getElementById('userMenu');
+      btn.addEventListener('click', function (e) {{ e.stopPropagation(); var open = drop.classList.toggle('open'); btn.setAttribute('aria-expanded', open); }});
+      document.addEventListener('click', function (e) {{ if (!menu.contains(e.target)) drop.classList.remove('open'); }});
+      document.addEventListener('keydown', function (e) {{ if (e.key === 'Escape') drop.classList.remove('open'); }});
+    }})();
+  </script>
 </body></html>";
     }
 }
