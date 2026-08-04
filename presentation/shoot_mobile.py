@@ -5,9 +5,13 @@ from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "mobile"); os.makedirs(OUT, exist_ok=True)
-BASE = "https://mastercorp.valentisoft.com"
-EMAIL = "christopher.davey@mastercorp.com"
-PWD = "ChrisD123*"
+BASE = os.environ.get("DEMO_BASE", "https://mastercorp.valentisoft.com")
+# Credenciales del admin: NUNCA hardcodear. Se leen del entorno.
+#   PowerShell:  $env:DEMO_ADMIN_EMAIL="..."; $env:DEMO_ADMIN_PWD="..."; python shoot_mobile.py
+EMAIL = os.environ.get("DEMO_ADMIN_EMAIL")
+PWD = os.environ.get("DEMO_ADMIN_PWD")
+if not EMAIL or not PWD:
+    raise SystemExit("Falta DEMO_ADMIN_EMAIL / DEMO_ADMIN_PWD en el entorno.")
 
 IPHONE = {
     "viewport": {"width": 390, "height": 844},
