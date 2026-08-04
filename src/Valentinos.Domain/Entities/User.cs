@@ -11,4 +11,9 @@ public class User : BaseEntity, ITenantOwned
     public string PasswordHash { get; set; } = string.Empty;
     public string Role { get; set; } = "admin";        // por ahora solo "admin" (a nivel tenant)
     public string DisplayName { get; set; } = string.Empty;
+
+    // Recuperación de contraseña: código de 6 dígitos (hasheado), expiración e intentos.
+    public string? ResetCodeHash { get; set; }
+    public DateTime? ResetCodeExpiresUtc { get; set; }
+    public int ResetCodeAttempts { get; set; }
 }

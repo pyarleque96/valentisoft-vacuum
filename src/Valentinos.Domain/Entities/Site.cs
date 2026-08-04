@@ -9,7 +9,6 @@ public class Site : BaseEntity, ITenantOwned
 {
     public Guid TenantId { get; set; }
     public string Code { get; set; } = string.Empty;   // código de negocio, p. ej. "069"
-    public string Name { get; set; } = string.Empty;   // nombre visible, p. ej. "Site 069"
-    public string Slug { get; set; } = string.Empty;   // segmento de URL aleatorio, p. ej. "site-XjUS3"
+    public string Slug { get; set; } = string.Empty;   // segmento de URL aleatorio, p. ej. "XjUS3"
     public string? CcEmails { get; set; }               // encargados (CC del reporte), separados por coma
 }

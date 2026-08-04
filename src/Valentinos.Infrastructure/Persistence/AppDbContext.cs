@@ -67,7 +67,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Site>(e =>
         {
             e.Property(x => x.Code).HasMaxLength(50).IsRequired();
-            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.Slug).HasMaxLength(60).IsRequired();
             e.Property(x => x.CcEmails).HasMaxLength(1000);
             e.HasIndex(x => x.Slug).IsUnique();
@@ -80,6 +79,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
             e.Property(x => x.Role).HasMaxLength(50).IsRequired();
             e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.ResetCodeHash).HasMaxLength(500);
             e.HasIndex(x => x.Email).IsUnique();
         });
 

@@ -67,17 +67,15 @@ public class AdminController : ControllerBase, IActionFilter
 
     // ---------- Crear site ----------
     [HttpPost("/admin/sites")]
-    public async Task<IActionResult> CreateSite([FromForm] string? code, [FromForm] string? name, [FromForm] string? cc)
+    public async Task<IActionResult> CreateSite([FromForm] string? code, [FromForm] string? cc)
     {
         if (Tid == Guid.Empty) return Redirect("/login");
         var c = (code ?? "").Trim();
-        var n = string.IsNullOrWhiteSpace(name) ? (string.IsNullOrWhiteSpace(c) ? "New site" : $"Site {c}") : name.Trim();
         if (string.IsNullOrWhiteSpace(c)) return Redirect("/admin/sites");
 
         _db.Sites.Add(new Site
         {
             Code = c,
-            Name = n,
             Slug = await UniqueSlugAsync(),
             CcEmails = NormalizeEmails(cc)
         });
@@ -101,13 +99,12 @@ public class AdminController : ControllerBase, IActionFilter
     }
 
     [HttpPost("/admin/sites/{key}")]
-    public async Task<IActionResult> SaveSite(string key, [FromForm] string? code, [FromForm] string? name, [FromForm] string? cc)
+    public async Task<IActionResult> SaveSite(string key, [FromForm] string? code, [FromForm] string? cc)
     {
         var site = await FindSiteAsync(key);
         if (site is null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(code)) site.Code = code.Trim();
-        if (!string.IsNullOrWhiteSpace(name)) site.Name = name.Trim();
         site.CcEmails = NormalizeEmails(cc);
         await _db.SaveChangesAsync();
         return Redirect($"/admin/sites/{site.Slug}");
@@ -221,7 +218,6 @@ public class AdminController : ControllerBase, IActionFilter
     <h2>New site</h2>
     <form method=""post"" action=""/admin/sites"" class=""grid"">
       <div><label>Code</label><input name=""code"" placeholder=""e.g. 070"" disabled></div>
-      <div><label>Name</label><input name=""name"" placeholder=""e.g. Site 070"" disabled></div>
       <div class=""full""><label>Recipients (CC) — comma separated</label><input name=""cc"" placeholder=""manager@company.com"" disabled></div>
       <div class=""full""><button type=""submit"" disabled>Create site</button></div>
     </form>
@@ -246,10 +242,9 @@ public class AdminController : ControllerBase, IActionFilter
   </div>
 
   <div class=""card"">
-    <h2>{WebUtility.HtmlEncode(site.Name)} <span class=""mono muted"">/{WebUtility.HtmlEncode(site.Slug)}</span></h2>
+    <h2>Site {WebUtility.HtmlEncode(site.Code)} <span class=""mono muted"">/{WebUtility.HtmlEncode(site.Slug)}</span></h2>
     <form method=""post"" action=""/admin/sites/{site.Slug}"" class=""grid"">
       <div><label>Code</label><input name=""code"" value=""{WebUtility.HtmlEncode(site.Code)}"" required></div>
-      <div><label>Name</label><input name=""name"" value=""{WebUtility.HtmlEncode(site.Name)}"" required></div>
       <div class=""full""><label>Recipients (CC) — comma separated</label>
         <input name=""cc"" value=""{WebUtility.HtmlEncode(site.CcEmails ?? "")}"" placeholder=""manager@company.com""></div>
       <div class=""full""><button type=""submit"">Save changes</button></div>
@@ -259,14 +254,37 @@ public class AdminController : ControllerBase, IActionFilter
   <div class=""card"">
     <h2>Vacuums ({vacuums.Count})</h2>
     <div class=""chips"">{chips}</div>
-    <form method=""post"" action=""/admin/sites/{site.Slug}/vacuums"" class=""addrow"">
+    <form id=""addForm"" method=""post"" action=""/admin/sites/{site.Slug}/vacuums"" class=""addrow"">
       <label>Add</label>
-      <input type=""number"" name=""count"" value=""1"" min=""1"" max=""200"" style=""width:90px"">
+      <input type=""number"" id=""addCount"" name=""count"" value=""1"" min=""1"" max=""200"" style=""width:90px"">
       <span class=""muted"">vacuums (numbered continuing from the last)</span>
       <button type=""submit"">Add</button>
     </form>
-  </div>";
-        return AdminLayout($"{site.Name} · {tenantNombre}", tenantNombre, body);
+  </div>
+
+  <div class=""modal-bg"" id=""addBg"">
+    <div class=""modal"" role=""dialog"" aria-modal=""true"">
+      <div class=""mico""><svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><line x1=""12"" y1=""5"" x2=""12"" y2=""19""></line><line x1=""5"" y1=""12"" x2=""19"" y2=""12""></line></svg></div>
+      <h3>Add vacuums?</h3>
+      <p>You're about to add <b id=""addN"">1</b> vacuum(s) to <b>Site {site.Code}</b>. They will be numbered continuing from the last one. Continue?</p>
+      <div class=""modal-actions"">
+        <button type=""button"" class=""mbtn ghost"" id=""addCancel"">Cancel</button>
+        <button type=""button"" class=""mbtn primary"" id=""addConfirm"">Add</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {{
+      var form = document.getElementById('addForm'), bg = document.getElementById('addBg'),
+          nEl = document.getElementById('addN'), cnt = document.getElementById('addCount');
+      form.addEventListener('submit', function (e) {{ e.preventDefault(); nEl.textContent = cnt.value || '1'; bg.classList.add('open'); }});
+      document.getElementById('addCancel').addEventListener('click', function () {{ bg.classList.remove('open'); }});
+      bg.addEventListener('click', function (e) {{ if (e.target === bg) bg.classList.remove('open'); }});
+      document.addEventListener('keydown', function (e) {{ if (e.key === 'Escape') bg.classList.remove('open'); }});
+      document.getElementById('addConfirm').addEventListener('click', function () {{ form.submit(); }});
+    }})();
+  </script>";
+        return AdminLayout($"Site {site.Code} · {tenantNombre}", tenantNombre, body);
     }
 
     // Color de avatar estable por nombre (parece aleatorio pero es consistente por usuario).
@@ -340,6 +358,17 @@ public class AdminController : ControllerBase, IActionFilter
   .chips {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }}
   .chip {{ background:#eaf1f9; color:#1560A8; border-radius:8px; padding:6px 10px; font-weight:600; font-size:13px; }}
   .addrow {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }} .addrow label {{ margin:0; }}
+  .modal-bg {{ position:fixed; inset:0; background:rgba(15,23,42,.55); display:none; align-items:center; justify-content:center; z-index:100; padding:18px; }}
+  .modal-bg.open {{ display:flex; }}
+  .modal {{ background:#fff; border-radius:16px; padding:22px; max-width:400px; width:100%; box-shadow:0 24px 60px rgba(15,23,42,.35); }}
+  .modal .mico {{ width:46px; height:46px; border-radius:12px; background:#eaf1f9; color:#1560A8; display:flex; align-items:center; justify-content:center; margin-bottom:12px; }}
+  .modal .mico svg {{ width:24px; height:24px; }}
+  .modal h3 {{ margin:0 0 6px; font-size:18px; color:#0f172a; }}
+  .modal p {{ margin:0 0 18px; color:#475569; font-size:14px; line-height:1.5; }} .modal p b {{ color:#0f172a; }}
+  .modal-actions {{ display:flex; gap:10px; justify-content:flex-end; }}
+  .mbtn {{ padding:11px 18px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; border:0; }}
+  .mbtn.ghost {{ background:#f1f5f9; color:#334155; }} .mbtn.ghost:hover {{ background:#e2e8f0; }}
+  .mbtn.primary {{ background:#1560A8; color:#fff; }} .mbtn.primary:hover {{ background:#0f4c85; }}
   @media (max-width:560px) {{
     .grid {{ grid-template-columns:1fr; }}
     /* En móvil ocultar la columna Recipients (CC) del grid. */

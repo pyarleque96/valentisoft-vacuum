@@ -48,10 +48,10 @@ public static class DemoSeeder
         // Slugs fijos (idempotente): los definidos aquí no cambian al reiniciar.
         var seedSites = new[]
         {
-            (Code: "069", Name: "Site 069", Slug: "XjUS3", Cc: "ramces.rodriguez@mastercorp.com"),
-            (Code: "002", Name: "Site 002", Slug: "Kp7Qm", Cc: (string?)null),
-            (Code: "003", Name: "Site 003", Slug: "Ra9Zt", Cc: (string?)null),
-            (Code: "004", Name: "Site 004", Slug: "Bn4Wc", Cc: (string?)null),
+            (Code: "069", Slug: "XjUS3", Cc: "ramces.rodriguez@mastercorp.com"),
+            (Code: "002", Slug: "Kp7Qm", Cc: (string?)null),
+            (Code: "003", Slug: "Ra9Zt", Cc: (string?)null),
+            (Code: "004", Slug: "Bn4Wc", Cc: (string?)null),
         };
         // Migración de slugs viejos con prefijo "site-" -> sin prefijo (idempotente).
         foreach (var old in await db.Sites.Where(x => x.Slug.StartsWith("site-")).ToListAsync())
@@ -62,7 +62,7 @@ public static class DemoSeeder
         {
             var existing = await db.Sites.FirstOrDefaultAsync(x => x.Code == s.Code);
             if (existing is null)
-                db.Sites.Add(new Site { Code = s.Code, Name = s.Name, Slug = s.Slug, CcEmails = s.Cc });
+                db.Sites.Add(new Site { Code = s.Code, Slug = s.Slug, CcEmails = s.Cc });
         }
         await db.SaveChangesAsync();
         var site069 = await db.Sites.FirstAsync(x => x.Code == "069");

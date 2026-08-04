@@ -387,7 +387,7 @@ public class DemoController : ControllerBase
     {
         var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(key);
         if (tenant is null || site is null) return NotFound();
-        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · {site.Name}", list, unav, DateTime.Now, period ?? "daily");
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", list, unav, DateTime.Now, period ?? "daily");
         return Content(Kpi.KpiHtml.Render(model, site.Slug), "text/html; charset=utf-8");
     }
 
@@ -397,7 +397,7 @@ public class DemoController : ControllerBase
     {
         var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(key);
         if (tenant is null || site is null) return NotFound();
-        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · {site.Name}", list, unav, DateTime.Now, period ?? "daily");
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", list, unav, DateTime.Now, period ?? "daily");
         return File(Kpi.KpiPdf.Render(model), "application/pdf");
     }
 
@@ -1008,7 +1008,7 @@ $@"<div class=""card"">
     private static string QrGeneratorHtml(string tenantNombre, Domain.Entities.Site site, List<string> assets, string baseUrl)
     {
         var slug = site.Slug;
-        var tenantH = WebUtility.HtmlEncode($"{tenantNombre} · {site.Name}");
+        var tenantH = WebUtility.HtmlEncode($"{tenantNombre} · Site {site.Code}");
         var slugJs = JsonSerializer.Serialize(slug);
         var baseJs = JsonSerializer.Serialize(baseUrl);
         var slugUrl = Uri.EscapeDataString(slug);
