@@ -9,6 +9,13 @@ public static class KpiHtml
 {
     private static string H(string s) => WebUtility.HtmlEncode(s);
     private static string F(double d) => d.ToString("0.#", CultureInfo.InvariantCulture);
+    // De "MasterCorp · Site 069" saca "Site 069" (parte después del último '·').
+    private static string SiteLabel(string tenantName) =>
+        tenantName.Contains('·') ? tenantName[(tenantName.LastIndexOf('·') + 1)..].Trim() : tenantName;
+    // De "MasterCorp · Site 069" saca "MasterCorp" (parte antes del primer '·').
+    private static string TenantOnly(string tenantName) =>
+        tenantName.Contains('·') ? tenantName[..tenantName.IndexOf('·')].Trim() : tenantName;
+    private static string PName(string period) => period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
 
     public static string Render(PeriodKpi m, string slug, IReadOnlyList<KpiSiteOption> sites)
     {
@@ -24,6 +31,7 @@ public static class KpiHtml
 
         // Sin registros en el periodo: el botón de PDF muestra un modal en vez de exportar vacío.
         var noDataJs = (m.Total + m.Un) == 0 ? "true" : "false";
+        var reportTitle = $"{PName(m.Period)} Report — {SiteLabel(m.TenantName)}";
 
         // Encabezado de la columna temporal: hora en diario, fecha en semanal/mensual.
         var whenKey = m.Period == "daily" ? "thTime" : "thDate";
@@ -173,8 +181,8 @@ public static class KpiHtml
   <div class=""card"">
     <div class=""head"">
       <div class=""logo""></div>
-      <div class=""t""><h1 data-i18n=""title"">KPI Report — Vacuum Control</h1>
-        <div class=""sub"">{H(m.TenantName)} · Housekeeping · {H(m.GeneratedAt.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture))}</div></div>
+      <div class=""t""><h1>{H(reportTitle)}</h1>
+        <div class=""sub"">{H(TenantOnly(m.TenantName))} · Housekeeping · {H(m.GeneratedAt.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture))}</div></div>
       <div class=""langs"">
         <button type=""button"" class=""flag"" id=""flag-en"" onclick=""setLang('en')""><img src=""/images/flags/us-circle.svg"" alt=""EN""></button>
         <button type=""button"" class=""flag"" id=""flag-es"" onclick=""setLang('es')""><img src=""/images/flags/es-circle.svg"" alt=""ES""></button>
@@ -247,7 +255,6 @@ public static class KpiHtml
     {Kv("kAvail", "Availability", m.AvailabilityPct + "%")}
     {Kv("kFa", "% With faults", m.FaPct + "%")}
     {Kv("kOos", "% Out of service", m.OosPct + "%")}
-    <div class=""note""><b data-i18n=""recLbl"">Recommendation:</b> <span>{H(m.Recommendation)}</span></div>
   </div>
 
 </div>
@@ -308,14 +315,41 @@ public static class KpiHtml
 </body></html>";
     }
 
-    // Email profesional (sin imágenes) del reporte generado, con el periodo seleccionado.
-    public static string RenderReportEmail(PeriodKpi m)
+    // Email profesional (sin imágenes) del reporte generado. Incluye UN bloque de
+    // resumen por cada site con actividad; el PDF adjunto trae el detalle de cada uno
+    // (cada site en una página nueva).
+    public static string RenderReportEmail(string tenantName, IReadOnlyList<PeriodKpi> sites)
     {
         string Row(string label, string value, string color = "#0f172a") =>
 $@"<tr><td style=""padding:9px 0;border-bottom:1px solid #e5e9f0;color:#64748b;font-size:13px;"">{H(label)}</td>
    <td style=""padding:9px 0;border-bottom:1px solid #e5e9f0;color:{color};font-size:14px;font-weight:700;text-align:right;"">{H(value)}</td></tr>";
-        var problems = m.ProblemAssets.Count > 0 ? string.Join(", ", m.ProblemAssets) : "None";
-        var pName = m.Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
+
+        var first = sites.Count > 0 ? sites[0] : null;
+        var pName = first is null ? "Daily" : first.Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
+        var periodLabel = first?.PeriodLabel ?? "";
+        var generatedAt = first?.GeneratedAt ?? DateTime.Now;
+        var siteWord = sites.Count == 1 ? "site" : "sites";
+
+        // Un bloque por site (título del site + tabla de conteos + problemas).
+        var blocks = new StringBuilder();
+        foreach (var m in sites)
+        {
+            var problems = m.ProblemAssets.Count > 0 ? string.Join(", ", m.ProblemAssets) : "None";
+            blocks.Append(
+$@"      <tr><td style=""padding:18px 28px 0;"">
+        <div style=""font-size:15px;font-weight:800;color:#1560A8;border-bottom:2px solid #e5e9f0;padding-bottom:8px;"">{H($"{pName} Report — {SiteLabel(m.TenantName)}")}</div>
+      </td></tr>
+      <tr><td style=""padding:6px 28px 2px;""><table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"">
+          {Row("Operational", m.Op.ToString(), "#16a34a")}
+          {Row("Working with faults", m.Fa.ToString(), "#d97706")}
+          {Row("Out of service", m.Oos.ToString(), "#dc2626")}
+          {Row("No vacuum available", m.Un.ToString(), "#64748b")}
+          {Row("Total check-ins", m.Total.ToString())}
+      </table></td></tr>
+      <tr><td style=""padding:4px 28px 8px;"">
+        <div style=""background:#f8fafc;border:1px solid #e5e9f0;border-radius:10px;padding:10px 14px;color:#0f172a;font-size:13px;"">Vacuums with problems: <b>{H(problems)}</b></div>
+      </td></tr>");
+        }
 
         return
 $@"<!doctype html><html><body style=""margin:0;padding:0;background:#eef2f7;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;"">
@@ -326,19 +360,12 @@ $@"<!doctype html><html><body style=""margin:0;padding:0;background:#eef2f7;font
         <div style=""color:#fff;font-size:20px;font-weight:800;margin-top:2px;"">{H(pName)} report generated</div>
       </td></tr>
       <tr><td style=""padding:24px 28px 6px;"">
-        <p style=""margin:0 0 4px;color:#0f172a;font-size:15px;"">The {H(pName.ToLowerInvariant())} KPI report for <b>{H(m.TenantName)}</b> is ready ({H(m.PeriodLabel)}).</p>
-        <p style=""margin:0;color:#64748b;font-size:13px;"">{H(m.GeneratedAt.ToString("dddd, MMM d yyyy · h:mm tt"))}</p>
+        <p style=""margin:0 0 4px;color:#0f172a;font-size:15px;"">The {H(pName.ToLowerInvariant())} KPI report for <b>{H(tenantName)}</b> is ready ({H(periodLabel)}). Includes <b>{sites.Count}</b> {siteWord} with activity.</p>
+        <p style=""margin:0;color:#64748b;font-size:13px;"">{H(generatedAt.ToString("dddd, MMM d yyyy · h:mm tt"))}</p>
       </td></tr>
-      <tr><td style=""padding:12px 28px 6px;""><table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"">
-          {Row("Operational", m.Op.ToString(), "#16a34a")}
-          {Row("Working with faults", m.Fa.ToString(), "#d97706")}
-          {Row("Out of service", m.Oos.ToString(), "#dc2626")}
-          {Row("No vacuum available", m.Un.ToString(), "#64748b")}
-          {Row("Total check-ins", m.Total.ToString())}
-      </table></td></tr>
-      <tr><td style=""padding:6px 28px 22px;"">
-        <div style=""background:#f8fafc;border:1px solid #e5e9f0;border-radius:10px;padding:12px 14px;color:#0f172a;font-size:13px;"">Vacuums with problems: <b>{H(problems)}</b></div>
-        <p style=""margin:16px 0 0;color:#475569;font-size:14px;"">📎 The full report is attached as a PDF.</p>
+{blocks}
+      <tr><td style=""padding:10px 28px 22px;"">
+        <p style=""margin:8px 0 0;color:#475569;font-size:14px;"">📎 The full report is attached as a PDF — one page per site.</p>
       </td></tr>
       <tr><td style=""background:#f8fafc;padding:16px 28px;border-top:1px solid #e5e9f0;"">
         <p style=""margin:0;color:#94a3b8;font-size:12px;"">Generated automatically by ValentiSoft platform. Please do not reply to this email.</p>

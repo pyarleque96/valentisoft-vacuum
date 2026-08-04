@@ -36,27 +36,51 @@ public class ReportEmailer
 
         var now = asOf ?? DateTime.Now;
         var since = now.Date.AddDays(-29);
-        var checkins = await _db.StatusCheckins.IgnoreQueryFilters()
-            .Where(c => c.TenantId == tenant.Id && c.CreatedAt >= since)
-            .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new KpiCheckin(c.EmployeeName, c.AssetCodigo, c.EstadoKey, c.Nota, c.CreatedAt))
-            .ToListAsync(ct);
-        var unav = await _db.UnavailableReports.IgnoreQueryFilters()
-            .Where(u => u.TenantId == tenant.Id && u.CreatedAt >= since)
-            .OrderByDescending(u => u.CreatedAt)
-            .Select(u => new KpiUnavailable(u.EmployeeName, u.Nota, u.CreatedAt))
+
+        // Un reporte POR SITE: se arma un modelo por cada sede del tenant, filtrando
+        // sus check-ins/no-disponibles por SiteId. Solo se incluyen los sites CON
+        // actividad en el periodo. El PDF junta todos (cada site en página nueva).
+        var sites = await _db.Sites.IgnoreQueryFilters()
+            .Where(s => s.TenantId == tenant.Id)
+            .OrderByDescending(s => s.Code)   // 069 primero
+            .Select(s => new { s.Id, s.Code })
             .ToListAsync(ct);
 
-        var model = Kpi.Kpi.Compute(tenant.Nombre, checkins, unav, now, period);
-        var pdf = KpiPdf.Render(model);
+        var models = new List<PeriodKpi>();
+        var totalActivity = 0;
+        foreach (var site in sites)
+        {
+            var checkins = await _db.StatusCheckins.IgnoreQueryFilters()
+                .Where(c => c.SiteId == site.Id && c.CreatedAt >= since)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new KpiCheckin(c.EmployeeName, c.AssetCodigo, c.EstadoKey, c.Nota, c.CreatedAt))
+                .ToListAsync(ct);
+            var unav = await _db.UnavailableReports.IgnoreQueryFilters()
+                .Where(u => u.SiteId == site.Id && u.CreatedAt >= since)
+                .OrderByDescending(u => u.CreatedAt)
+                .Select(u => new KpiUnavailable(u.EmployeeName, u.Nota, u.CreatedAt))
+                .ToListAsync(ct);
+            var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", checkins, unav, now, period);
+            models.Add(model);                       // todos los sites, cada uno su página
+            totalActivity += model.Total + model.Un;
+        }
 
-        var pName = model.Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
+        // Sin actividad en NINGÚN site: no se envía nada (coherente con el modal "sin data").
+        if (models.Count == 0 || totalActivity == 0)
+        {
+            _logger.LogInformation("Sin actividad en el periodo para {Tenant}: no se envía reporte.", tenant.Nombre);
+            return Array.Empty<string>();
+        }
+
+        var pName = models[0].Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
+        var pdf = KpiPdf.RenderMulti(models);
         var subject = $"[ValentiSoft] {pName} report · {tenant.Nombre}";
-        var body = KpiHtml.RenderReportEmail(model);
-        var att = new EmailAttachment(pdf, $"KPI-{pName}-{DateTime.Now:yyyy-MM-dd}.pdf", "application/pdf");
+        var body = KpiHtml.RenderReportEmail(tenant.Nombre, models);
+        var att = new EmailAttachment(pdf, $"KPI-{pName}-{now:yyyy-MM-dd}.pdf", "application/pdf");
 
         await _email.SendAsync(to, subject, body, isHtml: true, attachment: att, includeConfiguredCc: includeCc, ct: ct);
-        _logger.LogInformation("📄 Reporte {P} enviado a {To} (PDF {Bytes} bytes)", pName, string.Join(", ", to), pdf.Length);
+        _logger.LogInformation("📄 Reporte {P} ({Sites} sites) enviado a {To} (PDF {Bytes} bytes)",
+            pName, models.Count, string.Join(", ", to), pdf.Length);
         return to;
     }
 }

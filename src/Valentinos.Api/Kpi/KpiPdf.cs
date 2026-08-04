@@ -21,15 +21,15 @@ public static class KpiPdf
         _ => "No vacuum available"
     };
 
-    public static byte[] Render(PeriodKpi m)
+    public static byte[] Render(PeriodKpi m) => RenderMulti(new[] { m });
+
+    // Un solo PDF con el reporte de VARIOS sites, uno tras otro; cada site empieza
+    // en una página nueva (cada DrawOne hace su propio BeginPage inicial).
+    public static byte[] RenderMulti(IReadOnlyList<PeriodKpi> models)
     {
-        var pName = m.Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
         using var ms = new MemoryStream();
         using (var doc = SKDocument.CreatePdf(ms))
         {
-            var canvas = doc.BeginPage(W, Hgt);
-            float y = M;
-
             using var fTitle = new SKFont(SKTypeface.FromFamilyName("Arial", SKFontStyle.Bold), 20);
             using var fH2 = new SKFont(SKTypeface.FromFamilyName("Arial", SKFontStyle.Bold), 14);
             using var fBold = new SKFont(SKTypeface.FromFamilyName("Arial", SKFontStyle.Bold), 11);
@@ -42,6 +42,13 @@ public static class KpiPdf
             using var track = new SKPaint { Color = new SKColor(0xee, 0xf2, 0xf6), IsAntialias = true };
             using var fill = new SKPaint { IsAntialias = true };
             using var white = new SKPaint { Color = SKColors.White, IsAntialias = true };
+
+            // Dibuja el reporte de UN site, empezando en una página nueva.
+            void DrawOne(PeriodKpi m)
+            {
+            var pName = m.Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
+            var canvas = doc.BeginPage(W, Hgt);
+            float y = M;
 
             void NewPageIfNeeded(float need)
             {
@@ -79,8 +86,10 @@ public static class KpiPdf
             { fill.Color = c; canvas.DrawRoundRect(x, yy, w, h, r, r, fill); }
 
             // ---------- Encabezado ----------
-            Text($"{pName} KPI Report — Vacuum Control", fTitle, ink, M); y += 20;
-            Text($"{m.TenantName} · Housekeeping · {m.PeriodLabel} · {m.GeneratedAt.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture)}", fSmall, gray, M); y += 22;
+            var siteLabel = m.TenantName.Contains('·') ? m.TenantName[(m.TenantName.LastIndexOf('·') + 1)..].Trim() : m.TenantName;
+            var tenantOnly = m.TenantName.Contains('·') ? m.TenantName[..m.TenantName.IndexOf('·')].Trim() : m.TenantName;
+            Text($"{pName} Report — {siteLabel}", fTitle, ink, M); y += 20;
+            Text($"{tenantOnly} · Housekeeping · {m.PeriodLabel} · {m.GeneratedAt.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture)}", fSmall, gray, M); y += 22;
 
             // ---------- Distribución: donut + leyenda ----------
             H2("Status distribution");
@@ -254,11 +263,12 @@ public static class KpiPdf
             Kv("% With faults", m.FaPct + "%");
             Kv("% Out of service", m.OosPct + "%");
             KvWrap("Most faults", m.TopFaulty.Count > 0 ? string.Join(", ", m.TopFaulty.Select(a => $"{a.Vacuum} ({a.Count})")) : "—");
-            y += 6; NewPageIfNeeded(40);
-            Text("Recommendation:", fBold, ink, M); y += 16;
-            Text(Cut(m.Recommendation, 90), f, ink, M); y += 16;
 
             doc.EndPage();
+            } // fin DrawOne
+
+            if (models.Count == 0) { doc.BeginPage(W, Hgt); doc.EndPage(); } // documento no vacío
+            else foreach (var sm in models) DrawOne(sm);
             doc.Close();
         }
         return ms.ToArray();
