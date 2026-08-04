@@ -7,6 +7,7 @@ public record KpiUnavailable(string Employee, string? Nota, DateTime CreatedAt);
 public record KpiRow(string Employee, string Vacuum, string EstadoKey, string Notes, string When);
 public record UnavailableRow(string Employee, string Note, string When);
 public record AssetCount(string Vacuum, int Count);
+public record KpiSiteOption(string Slug, string Code);
 public record DayCount(string Label, int Total, int Problems);
 
 public record PeriodKpi(

@@ -196,7 +196,7 @@ public class AdminController : ControllerBase, IActionFilter
               <td class=""cccell"">{cc}</td>
               <td class=""acts"">
                 <a class=""ico"" href=""/admin/sites/{s.Slug}"" title=""Configure"" aria-label=""Configure"">{gear}</a>
-                <a class=""ico"" href=""/admin/sites/{s.Slug}/reports"" title=""KPIs"" aria-label=""KPIs"">{dash}</a>
+                <a class=""ico"" href=""/reports?site={s.Slug}"" title=""KPIs"" aria-label=""KPIs"">{dash}</a>
                 <a class=""ico"" href=""/admin/sites/{s.Slug}/qr"" title=""QR codes"" aria-label=""QR codes"">{qr}</a>
               </td>
             </tr>");
@@ -238,7 +238,7 @@ public class AdminController : ControllerBase, IActionFilter
 
   <div class=""siteacts"">
     <a href=""/admin/sites/{site.Slug}/qr"">{qrIco} QR codes</a>
-    <a href=""/admin/sites/{site.Slug}/reports"">{dashIco} Dashboard (KPIs)</a>
+    <a href=""/reports?site={site.Slug}"">{dashIco} Dashboard (KPIs)</a>
   </div>
 
   <div class=""card"">

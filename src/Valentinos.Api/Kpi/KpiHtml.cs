@@ -10,12 +10,17 @@ public static class KpiHtml
     private static string H(string s) => WebUtility.HtmlEncode(s);
     private static string F(double d) => d.ToString("0.#", CultureInfo.InvariantCulture);
 
-    public static string Render(PeriodKpi m, string slug)
+    public static string Render(PeriodKpi m, string slug, IReadOnlyList<KpiSiteOption> sites)
     {
         var slugJs = JsonSerializer.Serialize(slug);
 
         string Sel(string v, string en) =>
             $@"<option value=""{v}""{(m.Period == v ? " selected" : "")} data-i18n=""p_{v}"">{en}</option>";
+
+        // Opciones del dropdown de sites; el actual queda seleccionado.
+        var siteOpts = new StringBuilder();
+        foreach (var s in sites)
+            siteOpts.Append($@"<option value=""{H(s.Slug)}""{(s.Slug == slug ? " selected" : "")}>Site {H(s.Code)}</option>");
 
         // Encabezado de la columna temporal: hora en diario, fecha en semanal/mensual.
         var whenKey = m.Period == "daily" ? "thTime" : "thDate";
@@ -167,10 +172,13 @@ public static class KpiHtml
       </div>
     </div>
     <div class=""controls"">
-      <select id=""period"" onchange=""location.href='?period='+this.value"">
+      <select id=""site"" onchange=""location.href='/reports?site='+this.value+'&period={H(m.Period)}'"">
+        {siteOpts}
+      </select>
+      <select id=""period"" onchange=""location.href='/reports?site={H(slug)}&period='+this.value"">
         {Sel("daily", "Daily")}{Sel("weekly", "Weekly")}{Sel("monthly", "Monthly")}
       </select>
-      <a class=""btn"" href=""/admin/sites/{H(slug)}/reports/pdf?period={H(m.Period)}"" target=""_blank"" data-i18n=""dlpdf"">📄 Download PDF</a>
+      <a class=""btn"" href=""/reports/pdf?site={H(slug)}&period={H(m.Period)}"" target=""_blank"" data-i18n=""dlpdf"">📄 Download PDF</a>
     </div>
     <div id=""msg""></div>
   </div>

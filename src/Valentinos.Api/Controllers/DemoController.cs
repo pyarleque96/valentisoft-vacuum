@@ -208,7 +208,9 @@ public class DemoController : ControllerBase
     private Guid Tid => _tenant.TenantId ?? Guid.Empty;
 
     // Generador de QR de un SITE (panel admin). Acepta guid o slug.
-    [Authorize(Roles = "admin")]
+    // Vista pública (solo lectura): el generador de QR es accesible sin login.
+    // La gestión de sites/vacuums sigue protegida en AdminController.
+    [AllowAnonymous]
     [HttpGet("/admin/sites/{key}/qr")]
     public async Task<IActionResult> QrGenerator(string key)
     {
@@ -224,7 +226,8 @@ public class DemoController : ControllerBase
     }
 
     // Hoja PDF imprimible con TODOS los QRs del site (por defecto 6 por página).
-    [Authorize(Roles = "admin")]
+    // Parte de la vista pública del generador (descargar la hoja de QRs).
+    [AllowAnonymous]
     [HttpGet("/qr/{siteSlug}/sheet.pdf")]
     public async Task<IActionResult> QrSheet(string siteSlug, [FromQuery] string? @base, [FromQuery] int perpage = 6)
     {
@@ -425,23 +428,44 @@ public class DemoController : ControllerBase
         return (tenant, site, list, unav);
     }
 
-    [Authorize(Roles = "admin")]
-    [HttpGet("/admin/sites/{key}/reports")]
-    public async Task<IActionResult> KpiPage(string key, [FromQuery] string? period)
+    // Resuelve la "key" del site: el ?site= del query o, si falta, el site por defecto.
+    private async Task<string?> ReportsSiteKeyAsync(string? site)
     {
-        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(key);
-        if (tenant is null || site is null) return NotFound();
-        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", list, unav, DateTime.Now, period ?? "daily");
-        return Content(Kpi.KpiHtml.Render(model, site.Slug), "text/html; charset=utf-8");
+        if (!string.IsNullOrWhiteSpace(site)) return site;
+        var def = await DefaultSiteAsync();
+        return def?.Slug;
     }
 
-    [Authorize(Roles = "admin")]
-    [HttpGet("/admin/sites/{key}/reports/pdf")]
-    public async Task<IActionResult> KpiPdfPreview(string key, [FromQuery] string? period)
+    // Vista pública (solo lectura): dashboard de KPIs en /reports?site={slugOrGuid}.
+    // Si no se pasa site, usa el site por defecto. La página trae un dropdown con
+    // los sites disponibles del tenant (el actual queda seleccionado).
+    [AllowAnonymous]
+    [HttpGet("/reports")]
+    public async Task<IActionResult> KpiPage([FromQuery] string? site, [FromQuery] string? period)
     {
-        var (tenant, site, list, unav) = await LoadSiteCheckinsAsync(key);
-        if (tenant is null || site is null) return NotFound();
-        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", list, unav, DateTime.Now, period ?? "daily");
+        var key = await ReportsSiteKeyAsync(site);
+        if (string.IsNullOrWhiteSpace(key)) return NotFound();
+        var (tenant, s, list, unav) = await LoadSiteCheckinsAsync(key);
+        if (tenant is null || s is null) return NotFound();
+        var sites = await _db.Sites.IgnoreQueryFilters()
+            .Where(x => x.TenantId == Tid)
+            .OrderByDescending(x => x.Code)
+            .Select(x => new Kpi.KpiSiteOption(x.Slug, x.Code))
+            .ToListAsync();
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {s.Code}", list, unav, DateTime.Now, period ?? "daily");
+        return Content(Kpi.KpiHtml.Render(model, s.Slug, sites), "text/html; charset=utf-8");
+    }
+
+    // Parte de la vista pública de reportes (descargar el PDF): /reports/pdf?site={key}.
+    [AllowAnonymous]
+    [HttpGet("/reports/pdf")]
+    public async Task<IActionResult> KpiPdfPreview([FromQuery] string? site, [FromQuery] string? period)
+    {
+        var key = await ReportsSiteKeyAsync(site);
+        if (string.IsNullOrWhiteSpace(key)) return NotFound();
+        var (tenant, s, list, unav) = await LoadSiteCheckinsAsync(key);
+        if (tenant is null || s is null) return NotFound();
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {s.Code}", list, unav, DateTime.Now, period ?? "daily");
         return File(Kpi.KpiPdf.Render(model), "application/pdf");
     }
 
@@ -1138,7 +1162,7 @@ $@"<div class=""card"">
       <div class=""ac-list"" id=""codeList""></div>
     </div>
     <label class=""chk""><input type=""checkbox"" id=""logo"" checked> <span data-i18n=""logoLbl"">Include logo in the center</span></label>
-    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6"" data-i18n=""dlSheet"" download=""QRs-{slugUrl}.pdf"">⬇ Download all QRs (PDF)</a>
+    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6"" data-i18n=""dlSheet"" target=""_blank"" rel=""noopener"">🖨 Print all QRs (PDF)</a>
   </div>
 
   <div class=""card qrbox"">
@@ -1165,10 +1189,10 @@ $@"<div class=""card"">
   const SLUG = {slugJs}, BASE = {baseJs};
   const I18N = {{
     en: {{ genTitle:'QR Generator', codeLbl:'Equipment code', logoLbl:'Include logo in the center',
-      dlSheet:'⬇ Download all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · Housekeeping room',
+      dlSheet:'🖨 Print all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · Housekeeping room',
       fixedDesc:'To report unavailable equipment (without scanning a specific one).', dlFixed:'⬇ Download fixed QR' }},
     es: {{ genTitle:'Generador de QR', codeLbl:'Código del equipo', logoLbl:'Incluir logo al centro',
-      dlSheet:'⬇ Descargar todos los QR (PDF)', dlBtn:'⬇ Descargar PNG', fixedTitle:'QR fijo · Cuarto de housekeeping',
+      dlSheet:'🖨 Imprimir todos los QR (PDF)', dlBtn:'⬇ Descargar PNG', fixedTitle:'QR fijo · Cuarto de housekeeping',
       fixedDesc:'Para reportar un equipo no disponible (sin escanear un equipo específico).', dlFixed:'⬇ Descargar QR fijo' }}
   }};
   let LANG = 'en';
