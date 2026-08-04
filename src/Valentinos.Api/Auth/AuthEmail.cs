@@ -42,7 +42,7 @@ $@"<!doctype html>
   <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#eef2f7;padding:24px 12px;""><tr><td align=""center"">
     <table role=""presentation"" width=""600"" cellpadding=""0"" cellspacing=""0"" style=""max-width:600px;width:100%;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,.08);"">
       <tr><td style=""background:#1560A8;padding:22px 28px;"">
-        <div style=""color:#fff;font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:.85;"">{tenantNombre} · Housekeeping</div>
+        <div style=""color:#fff;font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:.85;"">{tenantNombre}</div>
         <div style=""color:#fff;font-size:20px;font-weight:800;margin-top:2px;"">Account security</div>
       </td></tr>
 {bodyRows}
