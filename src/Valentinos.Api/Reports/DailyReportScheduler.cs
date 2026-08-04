@@ -51,7 +51,7 @@ public class DailyReportScheduler : BackgroundService
             {
                 try
                 {
-                    var sent = await emailer.SendAsync(tenant, "daily", null, ct);
+                    var sent = await emailer.SendAsync(tenant, "daily", ct: ct);
                     _logger.LogInformation("📅 Reporte diario enviado ({Tenant}) a {To}", tenant.Nombre, string.Join(", ", sent));
                 }
                 catch (Exception ex)

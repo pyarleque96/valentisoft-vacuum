@@ -18,7 +18,7 @@ public class SmtpEmailSender : IEmailSender
     }
 
     public async Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
-        EmailAttachment? attachment = null, CancellationToken ct = default)
+        EmailAttachment? attachment = null, bool includeConfiguredCc = true, CancellationToken ct = default)
     {
         // Apagado por default: sin SMTP configurado no se intenta enviar (no-op seguro).
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Host) || to.Count == 0)
@@ -32,8 +32,8 @@ public class SmtpEmailSender : IEmailSender
         using var message = new MailMessage { From = new MailAddress(from, fromName), Subject = subject };
         foreach (var addr in to) message.To.Add(addr);
 
-        // Copia (CC), configurable — separada por comas.
-        if (!string.IsNullOrWhiteSpace(_options.Cc))
+        // Copia (CC), configurable — separada por comas. Se omite en envíos de prueba.
+        if (includeConfiguredCc && !string.IsNullOrWhiteSpace(_options.Cc))
             foreach (var cc in _options.Cc.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 message.CC.Add(cc);
 

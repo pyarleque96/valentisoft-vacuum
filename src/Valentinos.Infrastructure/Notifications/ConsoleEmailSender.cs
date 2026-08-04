@@ -12,7 +12,7 @@ public class ConsoleEmailSender : IEmailSender
     public ConsoleEmailSender(ILogger<ConsoleEmailSender> logger) => _logger = logger;
 
     public Task SendAsync(IReadOnlyList<string> to, string subject, string body, bool isHtml = false,
-        EmailAttachment? attachment = null, CancellationToken ct = default)
+        EmailAttachment? attachment = null, bool includeConfiguredCc = true, CancellationToken ct = default)
     {
         var att = attachment is null ? "" : $" · adjunto: {attachment.FileName} ({attachment.Content.Length} bytes)";
         _logger.LogInformation(

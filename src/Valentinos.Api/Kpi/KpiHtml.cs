@@ -22,6 +22,9 @@ public static class KpiHtml
         foreach (var s in sites)
             siteOpts.Append($@"<option value=""{H(s.Slug)}""{(s.Slug == slug ? " selected" : "")}>Site {H(s.Code)}</option>");
 
+        // Sin registros en el periodo: el botón de PDF muestra un modal en vez de exportar vacío.
+        var noDataJs = (m.Total + m.Un) == 0 ? "true" : "false";
+
         // Encabezado de la columna temporal: hora en diario, fecha en semanal/mensual.
         var whenKey = m.Period == "daily" ? "thTime" : "thDate";
         var whenEn = m.Period == "daily" ? "Time" : "Date";
@@ -107,6 +110,12 @@ public static class KpiHtml
   select {{ flex:1 1 140px; padding:12px; border-radius:10px; border:1px solid #cbd5e1; background:#fff; color:#1f2937; font-size:15px; font-weight:600; }}
   .btn {{ flex:2 1 180px; background:#1560A8; color:#fff; border:0; border-radius:10px; padding:12px 16px; font-weight:700; font-size:14px; cursor:pointer; }}
   .btn:hover {{ background:#0f4c85; }} .btn:disabled {{ opacity:.6; cursor:progress; }}
+  .modal-bg {{ position:fixed; inset:0; background:rgba(15,31,48,.45); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }}
+  .modal-bg.show {{ display:flex; }}
+  .modal {{ background:#fff; border-radius:16px; max-width:360px; width:100%; padding:24px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.25); }}
+  .modal .ic {{ font-size:38px; line-height:1; }}
+  .modal h3 {{ margin:10px 0 6px; color:#1560A8; font-size:18px; }}
+  .modal p {{ margin:0 0 18px; color:#64748b; font-size:14px; }}
   .tblshell {{ position:relative; }}
   .tblshell::after {{ content:''; position:absolute; top:0; right:0; bottom:0; width:44px; pointer-events:none;
     background:linear-gradient(to right, rgba(255,255,255,0), #fff 88%); opacity:1; transition:opacity .2s; }}
@@ -178,9 +187,18 @@ public static class KpiHtml
       <select id=""period"" onchange=""location.href='/reports?site={H(slug)}&period='+this.value"">
         {Sel("daily", "Daily")}{Sel("weekly", "Weekly")}{Sel("monthly", "Monthly")}
       </select>
-      <a class=""btn"" href=""/reports/pdf?site={H(slug)}&period={H(m.Period)}"" target=""_blank"" data-i18n=""dlpdf"">📄 Download PDF</a>
+      <a class=""btn"" href=""/reports/pdf?site={H(slug)}&period={H(m.Period)}"" target=""_blank"" data-i18n=""dlpdf"" onclick=""return pdfGuard(event)"">📄 Download PDF</a>
     </div>
     <div id=""msg""></div>
+  </div>
+
+  <div class=""modal-bg"" id=""noDataModal"" onclick=""if(event.target===this)closeNoData()"">
+    <div class=""modal"">
+      <div class=""ic"">📭</div>
+      <h3 data-i18n=""ndTitle"">No data available</h3>
+      <p data-i18n=""ndMsg"">There are no records for the selected period, so there's nothing to export.</p>
+      <button class=""btn"" type=""button"" onclick=""closeNoData()"" data-i18n=""ndClose"">Close</button>
+    </div>
   </div>
 
 
@@ -234,6 +252,9 @@ public static class KpiHtml
 
 </div>
 <script>
+  const NO_DATA = {noDataJs};
+  function pdfGuard(e){{ if(NO_DATA){{ e.preventDefault(); document.getElementById('noDataModal').classList.add('show'); return false; }} return true; }}
+  function closeNoData(){{ document.getElementById('noDataModal').classList.remove('show'); }}
   const I18N = {{
     en: {{ title:'KPI Report — Vacuum Control', dlpdf:'📄 Download PDF', send:'📄 Send report', sending:'Sending…',
       p_daily:'Daily', p_weekly:'Weekly', p_monthly:'Monthly',
@@ -244,7 +265,8 @@ public static class KpiHtml
       thEmp:'Employee', thVac:'Vacuum', thDate:'Date', thTime:'Time', thSt:'Status', thNo:'Notes', probLbl:'Vacuums with problems:',
       kAvail:'Availability', kFa:'% With faults', kOos:'% Out of service', recLbl:'Recommendation:',
       unTitle:'Unavailable equipment', unEmpty:'No unavailable-equipment reports for this period.', unCount:'reports in this period',
-      confirmTitle:'Send report?', confirmMsg:""A PDF will be generated and emailed to the report's recipients. Do you want to continue?"", confirmCancel:'Cancel', confirmSend:'Send' }},
+      confirmTitle:'Send report?', confirmMsg:""A PDF will be generated and emailed to the report's recipients. Do you want to continue?"", confirmCancel:'Cancel', confirmSend:'Send',
+      ndTitle:'No data available', ndMsg:""There are no records for the selected period, so there's nothing to export."", ndClose:'Close' }},
     es: {{ title:'Reporte de KPIs — Aspiradoras', dlpdf:'📄 Descargar PDF', send:'📄 Enviar reporte', sending:'Enviando…',
       p_daily:'Diario', p_weekly:'Semanal', p_monthly:'Mensual',
       distTitle:'Distribución de estado', trendTitle:'Check-ins por día', topTitle:'Más reportadas',
@@ -254,7 +276,8 @@ public static class KpiHtml
       thEmp:'Empleado', thVac:'Aspiradora', thDate:'Fecha', thTime:'Hora', thSt:'Estado', thNo:'Notas', probLbl:'Aspiradoras con problemas:',
       kAvail:'Disponibilidad', kFa:'% Con fallas', kOos:'% Fuera de servicio', recLbl:'Recomendación:',
       unTitle:'Equipo no disponible', unEmpty:'Sin reportes de equipo no disponible en este periodo.', unCount:'reportes en este periodo',
-      confirmTitle:'¿Enviar reporte?', confirmMsg:'Se generará un PDF y se enviará por correo a los destinatarios del reporte. ¿Deseas continuar?', confirmCancel:'Cancelar', confirmSend:'Enviar' }}
+      confirmTitle:'¿Enviar reporte?', confirmMsg:'Se generará un PDF y se enviará por correo a los destinatarios del reporte. ¿Deseas continuar?', confirmCancel:'Cancelar', confirmSend:'Enviar',
+      ndTitle:'No hay data disponible', ndMsg:'No hay registros en el periodo seleccionado, así que no hay nada para exportar.', ndClose:'Cerrar' }}
   }};
   const ST = {{ operational:'stOp', AMedias:'stFa', NoFunciona:'stOos', unavailable:'stUn' }};
   const PERIOD = {JsonSerializer.Serialize(m.Period)};

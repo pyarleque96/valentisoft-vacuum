@@ -456,6 +456,28 @@ public class DemoController : ControllerBase
         return Content(Kpi.KpiHtml.Render(model, s.Slug, sites), "text/html; charset=utf-8");
     }
 
+    // Envía un SAMPLE del reporte por correo (mismo formato/lógica que el scheduler),
+    // pero SOLO a los destinatarios explícitos (default: pedroyarleque96@gmail.com),
+    // sin tocar los destinatarios de la web (NotificationEmails) ni el CC configurado.
+    // El reporte es a nivel de TENANT (combina los 4 sites). Admite ?period= y ?asof=yyyy-MM-dd
+    // (asof simula el "hoy" del cálculo, útil para ver un día con actividad).
+    [Authorize(Roles = "admin")]
+    [HttpPost("/admin/reports/sample")]
+    public async Task<IActionResult> SendSampleReport([FromQuery] string? to, [FromQuery] string? period, [FromQuery] string? asof)
+    {
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
+        if (tenant is null) return NotFound();
+        var dest = string.IsNullOrWhiteSpace(to) ? "pedroyarleque96@gmail.com" : to.Trim();
+        DateTime? asOf = DateTime.TryParse(asof, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d) ? d.Date.AddHours(23).AddMinutes(59) : null;
+        var sent = await _reportEmailer.SendAsync(tenant, period ?? "daily",
+            toOverride: new[] { dest }, includeCc: false, asOf: asOf);
+        var msg = sent.Count > 0
+            ? $"OK: sample '{period ?? "daily"}' enviado SOLO a {string.Join(", ", sent)} (sin CC, sin destinatarios de la web)."
+            : "No se envió (SMTP apagado o sin destinatarios).";
+        return Content(msg, "text/plain; charset=utf-8");
+    }
+
     // Parte de la vista pública de reportes (descargar el PDF): /reports/pdf?site={key}.
     [AllowAnonymous]
     [HttpGet("/reports/pdf")]
@@ -1084,6 +1106,7 @@ $@"<div class=""card"">
         var baseH = WebUtility.HtmlEncode(baseUrl);
         var fixedUrlH = WebUtility.HtmlEncode(FixedUrl(baseUrl, slug));
         var codesJs = JsonSerializer.Serialize(assets);
+        var hasVacJs = assets.Count > 0 ? "true" : "false"; // sin vacuums: imprimir muestra modal
         var first = assets.Count > 0 ? WebUtility.HtmlEncode(assets[0]) : "VAC-001";
         const string clip = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""9"" y=""9"" width=""13"" height=""13"" rx=""2""></rect><path d=""M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1""></path></svg>";
         const string dlIco = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4""></path><polyline points=""7 10 12 15 17 10""></polyline><line x1=""12"" y1=""15"" x2=""12"" y2=""3""></line></svg>";
@@ -1143,6 +1166,12 @@ $@"<div class=""card"">
   .ac-item:last-child {{ border-bottom:0; }}
   .ac-item.active, .ac-item:hover {{ background:#eef4fb; color:#0f4c85; }}
   .ac-empty {{ padding:12px 14px; color:#94a3b8; font-size:14px; }}
+  .modal-bg {{ position:fixed; inset:0; background:rgba(15,31,48,.45); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }}
+  .modal-bg.show {{ display:flex; }}
+  .modal {{ background:#fff; border-radius:16px; max-width:360px; width:100%; padding:24px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.25); }}
+  .modal .ic {{ font-size:38px; line-height:1; }}
+  .modal h3 {{ margin:10px 0 6px; color:#1560A8; font-size:18px; }}
+  .modal p {{ margin:0 0 18px; color:#64748b; font-size:14px; }}
 </style></head>
 <body><div class=""wrap"">
   <div class=""card"">
@@ -1162,7 +1191,7 @@ $@"<div class=""card"">
       <div class=""ac-list"" id=""codeList""></div>
     </div>
     <label class=""chk""><input type=""checkbox"" id=""logo"" checked> <span data-i18n=""logoLbl"">Include logo in the center</span></label>
-    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6"" data-i18n=""dlSheet"" target=""_blank"" rel=""noopener"">🖨 Print all QRs (PDF)</a>
+    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6"" data-i18n=""dlSheet"" target=""_blank"" rel=""noopener"" onclick=""return printGuard(event)"">🖨 Print all QRs (PDF)</a>
   </div>
 
   <div class=""card qrbox"">
@@ -1185,15 +1214,29 @@ $@"<div class=""card"">
     <a class=""btn"" href=""/qr/{slugUrl}/fixed.png?base={baseParam}&amp;download=1"" data-i18n=""dlFixed"" download>⬇ Download fixed QR</a>
   </div>
 </div>
+
+<div class=""modal-bg"" id=""noVacModal"" onclick=""if(event.target===this)closeNoVac()"">
+  <div class=""modal"">
+    <div class=""ic"">📭</div>
+    <h3 data-i18n=""nvTitle"">No data available</h3>
+    <p data-i18n=""nvMsg"">This site has no vacuums yet, so there's nothing to print.</p>
+    <button class=""btn"" type=""button"" onclick=""closeNoVac()"" data-i18n=""nvClose"">Close</button>
+  </div>
+</div>
 <script>
   const SLUG = {slugJs}, BASE = {baseJs};
+  const HAS_VAC = {hasVacJs};
+  function printGuard(e){{ if(!HAS_VAC){{ e.preventDefault(); document.getElementById('noVacModal').classList.add('show'); return false; }} return true; }}
+  function closeNoVac(){{ document.getElementById('noVacModal').classList.remove('show'); }}
   const I18N = {{
     en: {{ genTitle:'QR Generator', codeLbl:'Equipment code', logoLbl:'Include logo in the center',
       dlSheet:'🖨 Print all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · Housekeeping room',
-      fixedDesc:'To report unavailable equipment (without scanning a specific one).', dlFixed:'⬇ Download fixed QR' }},
+      fixedDesc:'To report unavailable equipment (without scanning a specific one).', dlFixed:'⬇ Download fixed QR',
+      nvTitle:'No data available', nvMsg:""This site has no vacuums yet, so there's nothing to print."", nvClose:'Close' }},
     es: {{ genTitle:'Generador de QR', codeLbl:'Código del equipo', logoLbl:'Incluir logo al centro',
       dlSheet:'🖨 Imprimir todos los QR (PDF)', dlBtn:'⬇ Descargar PNG', fixedTitle:'QR fijo · Cuarto de housekeeping',
-      fixedDesc:'Para reportar un equipo no disponible (sin escanear un equipo específico).', dlFixed:'⬇ Descargar QR fijo' }}
+      fixedDesc:'Para reportar un equipo no disponible (sin escanear un equipo específico).', dlFixed:'⬇ Descargar QR fijo',
+      nvTitle:'No hay data disponible', nvMsg:'Este site aún no tiene aspiradoras, así que no hay nada para imprimir.', nvClose:'Cerrar' }}
   }};
   let LANG = 'en';
   function setLang(l) {{

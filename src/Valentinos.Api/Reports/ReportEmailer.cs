@@ -24,13 +24,18 @@ public class ReportEmailer
 
     // Envía el reporte del periodo. `toOverride` fuerza los destinatarios (para pruebas);
     // si es null, usa los del tenant (NotificationEmails). El CC lo agrega el SmtpEmailSender.
+    // `toOverride` fuerza los destinatarios; `includeCc=false` omite el CC configurado
+    // (para samples que van SOLO a `toOverride`); `asOf` fija el "ahora" del cálculo
+    // (para simular el reporte de un día concreto). Devuelve null-si-vacío en un flag aparte.
     public async Task<IReadOnlyList<string>> SendAsync(Tenant tenant, string period,
-        IReadOnlyList<string>? toOverride = null, CancellationToken ct = default)
+        IReadOnlyList<string>? toOverride = null, bool includeCc = true,
+        DateTime? asOf = null, CancellationToken ct = default)
     {
         var to = toOverride ?? EmailChannel.Recipients(tenant);
         if (to.Count == 0) return Array.Empty<string>();
 
-        var since = DateTime.Now.Date.AddDays(-29);
+        var now = asOf ?? DateTime.Now;
+        var since = now.Date.AddDays(-29);
         var checkins = await _db.StatusCheckins.IgnoreQueryFilters()
             .Where(c => c.TenantId == tenant.Id && c.CreatedAt >= since)
             .OrderByDescending(c => c.CreatedAt)
@@ -42,7 +47,7 @@ public class ReportEmailer
             .Select(u => new KpiUnavailable(u.EmployeeName, u.Nota, u.CreatedAt))
             .ToListAsync(ct);
 
-        var model = Kpi.Kpi.Compute(tenant.Nombre, checkins, unav, DateTime.Now, period);
+        var model = Kpi.Kpi.Compute(tenant.Nombre, checkins, unav, now, period);
         var pdf = KpiPdf.Render(model);
 
         var pName = model.Period switch { "weekly" => "Weekly", "monthly" => "Monthly", _ => "Daily" };
@@ -50,7 +55,7 @@ public class ReportEmailer
         var body = KpiHtml.RenderReportEmail(model);
         var att = new EmailAttachment(pdf, $"KPI-{pName}-{DateTime.Now:yyyy-MM-dd}.pdf", "application/pdf");
 
-        await _email.SendAsync(to, subject, body, isHtml: true, attachment: att, ct: ct);
+        await _email.SendAsync(to, subject, body, isHtml: true, attachment: att, includeConfiguredCc: includeCc, ct: ct);
         _logger.LogInformation("📄 Reporte {P} enviado a {To} (PDF {Bytes} bytes)", pName, string.Join(", ", to), pdf.Length);
         return to;
     }
