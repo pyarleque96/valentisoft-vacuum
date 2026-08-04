@@ -210,7 +210,7 @@ public class AuthController : ControllerBase
   .card {{ background:#fff; border:1px solid #e5e9f0; border-radius:16px; padding:28px 24px; width:100%; max-width:400px;
     box-shadow:0 12px 40px rgba(15,23,42,.10); }}
   .brand {{ display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:20px; }}
-  .logo {{ width:64px; height:64px; border-radius:16px; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/contain;
+  .logo {{ width:64px; height:64px; border-radius:16px; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/70%;
     border:1px solid #e5e9f0; box-shadow:0 8px 22px rgba(15,23,42,.10); margin-bottom:12px; }}
   h1 {{ font-size:20px; margin:0; color:#1560A8; }}
   .sub {{ color:#64748b; font-size:13px; margin-top:2px; }}
@@ -263,7 +263,7 @@ $@"<!doctype html>
   .card {{ background:#fff; border:1px solid #e5e9f0; border-radius:16px; padding:28px 24px; width:100%; max-width:400px;
     box-shadow:0 12px 40px rgba(15,23,42,.10); }}
   .brand {{ display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:20px; }}
-  .logo {{ width:64px; height:64px; border-radius:16px; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/contain;
+  .logo {{ width:64px; height:64px; border-radius:16px; background:#fff url(/images/brand/mastercorp-logo.png) no-repeat 50%/70%;
     border:1px solid #e5e9f0; box-shadow:0 8px 22px rgba(15,23,42,.10); margin-bottom:12px; }}
   h1 {{ font-size:20px; margin:0; color:#1560A8; }}
   .sub {{ color:#64748b; font-size:13px; margin-top:6px; line-height:1.5; }}
