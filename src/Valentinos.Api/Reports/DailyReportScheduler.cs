@@ -15,20 +15,34 @@ public class DailyReportScheduler : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
 
+    // Ventana de gracia: si al arrancar/reanudar ya pasaron más de 15 minutos de la
+    // hora objetivo, se considera el día perdido (decisión del usuario: mejor saltarse
+    // un día que mandar el correo a una hora rara o duplicado).
+    private static readonly TimeSpan GraceWindow = TimeSpan.FromMinutes(15);
+
     private readonly TimeSpan _sendAt; // hora local de envío (config Reports:DailyTime, HH:mm)
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<DailyReportScheduler> _logger;
+    private readonly DailyReportState _state;
     private DateOnly? _lastSentDate;
 
-    public DailyReportScheduler(IServiceScopeFactory scopes, ILogger<DailyReportScheduler> logger, IConfiguration config)
+    public DailyReportScheduler(
+        IServiceScopeFactory scopes, ILogger<DailyReportScheduler> logger, IConfiguration config, DailyReportState state)
     {
         _scopes = scopes;
         _logger = logger;
+        _state = state;
         _sendAt = TimeSpan.TryParse(config["Reports:DailyTime"], out var t) ? t : new TimeSpan(10, 0, 0);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _lastSentDate = _state.ReadLastSent();
+        if (_lastSentDate is { } last)
+            _logger.LogInformation("⏰ Estado recuperado al arrancar: último reporte diario enviado el {LastSent}.", last);
+        else
+            _logger.LogInformation("⏰ Estado recuperado al arrancar: sin registro de envío previo.");
+
         LogNextFire(DateTime.Now);
         DateTime? lastPoll = null;
 
@@ -53,7 +67,7 @@ public class DailyReportScheduler : BackgroundService
             }
             lastPoll = now;
 
-            if (DailyReportSchedule.ShouldSend(now, _sendAt, _lastSentDate))
+            if (DailyReportSchedule.ShouldSend(now, _sendAt, GraceWindow, _lastSentDate))
             {
                 var lateness = DailyReportSchedule.Lateness(now, _sendAt);
                 if (lateness > TimeSpan.FromMinutes(1))
@@ -79,6 +93,7 @@ public class DailyReportScheduler : BackgroundService
                     // error deja el flag sin marcar y el próximo poll (1 minuto después)
                     // reintenta sin parar durante el resto del día.
                     _lastSentDate = DateOnly.FromDateTime(now);
+                    _state.WriteLastSent(_lastSentDate.Value);
                     LogNextFire(now);
                 }
             }
