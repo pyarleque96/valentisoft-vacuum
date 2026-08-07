@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Qr;
@@ -419,7 +420,7 @@ public class DemoController : ControllerBase
         return Content(html, "text/html; charset=utf-8");
     }
 
-    // ---------- Dashboard de KPIs por SITE (panel admin) ----------
+    // ---------- Dashboard de KPIs por SITE (vistas privada y pública) ----------
     // Check-ins y "no disponibles" de los últimos 30 días de un site YA resuelto.
     private async Task<(List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)>
         LoadCheckinsForSiteAsync(Domain.Entities.Site site)
@@ -522,6 +523,7 @@ public class DemoController : ControllerBase
     // Se resuelve con ResolveSiteAsync (slug exacto) y NO con ReportsSiteKeyAsync, que
     // acepta guid y cae al site por defecto: aquí la URL manda y un ?site= se ignora.
     [AllowAnonymous]
+    [EnableRateLimiting("public-reports")]
     [HttpGet("/{siteSlug}/reports")]
     public async Task<IActionResult> SiteKpiPage(string siteSlug, [FromQuery] string? period)
     {
@@ -536,6 +538,7 @@ public class DemoController : ControllerBase
 
     // PDF de la vista pública: el mismo reporte, del mismo site y de ninguno más.
     [AllowAnonymous]
+    [EnableRateLimiting("public-reports")]
     [HttpGet("/{siteSlug}/reports/pdf")]
     public async Task<IActionResult> SiteKpiPdf(string siteSlug, [FromQuery] string? period)
     {
