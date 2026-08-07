@@ -69,6 +69,17 @@ public class SiteReportsEndpointTests : IClassFixture<SiteReportsEndpointTests.F
 
     public class Factory : WebApplicationFactory<Program>
     {
+        public Factory()
+        {
+            // Host de un subdominio real de tenant: sin esto, SlugResolver.FromHost
+            // devuelve null para "localhost" y el middleware nunca fija el tenant en
+            // contexto (Tid queda en Guid.Empty). Con Tid vacío, una query filtrada
+            // por TenantId (p. ej. la del dropdown en /reports) devolvería una lista
+            // vacía TAMBIÉN en el test, y el test de aislamiento pasaría sin haber
+            // probado nada.
+            ClientOptions.BaseAddress = new Uri("http://mastercorp.valentisoft.com");
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
