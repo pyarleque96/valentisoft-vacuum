@@ -13,14 +13,18 @@ public class KpiHtmlRenderTests
             System.Array.Empty<KpiCheckin>(), System.Array.Empty<KpiUnavailable>(),
             System.DateTime.Now, period);
 
+    // A este nivel `Render` sólo puede filtrar lo que se le pasa: con `sites` vacía es
+    // imposible que aparezcan slugs o códigos de otros sites, con o sin el fix (siteOpts
+    // se arma iterando `sites`). La comprobación real de aislamiento entre sites —que el
+    // controlador decide pasar una lista vacía aun cuando la base tiene varios sites—
+    // vive en el test del endpoint, no acá. Acá sólo verificamos que el bloque del
+    // selector no se emite.
     [Fact]
     public void Render_SinSites_NoEmiteElSelectorNiDatosDeOtrosSites()
     {
         var html = KpiHtml.Render(Modelo(), "Kp7Qm", System.Array.Empty<KpiSiteOption>());
 
         Assert.DoesNotContain("id=\"site\"", html);
-        Assert.DoesNotContain("XjUS3", html);
-        Assert.DoesNotContain("Site 069", html);
     }
 
     [Fact]
