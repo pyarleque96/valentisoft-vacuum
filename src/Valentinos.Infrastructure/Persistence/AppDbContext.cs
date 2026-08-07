@@ -68,7 +68,7 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.Code).HasMaxLength(50).IsRequired();
             e.Property(x => x.Slug).HasMaxLength(60).IsRequired();
-            e.Property(x => x.CcEmails).HasMaxLength(1000);
+            e.Property(x => x.Emails).HasMaxLength(1000);
             e.HasIndex(x => x.Slug).IsUnique();
             e.HasIndex(x => new { x.TenantId, x.Code });
         });

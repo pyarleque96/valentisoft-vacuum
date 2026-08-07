@@ -62,7 +62,7 @@ public static class DemoSeeder
         {
             var existing = await db.Sites.FirstOrDefaultAsync(x => x.Code == s.Code);
             if (existing is null)
-                db.Sites.Add(new Site { Code = s.Code, Slug = s.Slug, CcEmails = s.Cc });
+                db.Sites.Add(new Site { Code = s.Code, Slug = s.Slug, Emails = s.Cc });
         }
         await db.SaveChangesAsync();
         var site069 = await db.Sites.FirstAsync(x => x.Code == "069");
