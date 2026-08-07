@@ -1,10 +1,7 @@
-using Microsoft.EntityFrameworkCore;
-using Valentinos.Infrastructure.Persistence;
-
 namespace Valentinos.Api.Reports;
 
-// Envía el reporte DIARIO por correo todos los días a las 10:00 (hora local del servidor),
-// para cada tenant que tenga destinatarios configurados. Sin dependencias externas.
+// Dispara el envío DIARIO de reportes todos los días a las 10:00 (hora local del
+// servidor), delegando en DailyReportRunner. Sin dependencias externas.
 // NOTA: requiere que la app esté corriendo a esa hora (idealmente instalada como servicio).
 public class DailyReportScheduler : BackgroundService
 {
@@ -40,25 +37,8 @@ public class DailyReportScheduler : BackgroundService
         try
         {
             using var scope = _scopes.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var emailer = scope.ServiceProvider.GetRequiredService<ReportEmailer>();
-
-            var tenants = await db.Tenants.IgnoreQueryFilters()
-                .Where(t => t.NotificationEmails != null && t.NotificationEmails != "")
-                .ToListAsync(ct);
-
-            foreach (var tenant in tenants)
-            {
-                try
-                {
-                    var sent = await emailer.SendAsync(tenant, "daily", ct: ct);
-                    _logger.LogInformation("📅 Reporte diario enviado ({Tenant}) a {To}", tenant.Nombre, string.Join(", ", sent));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Fallo al enviar el reporte diario de {Tenant}", tenant.Nombre);
-                }
-            }
+            var runner = scope.ServiceProvider.GetRequiredService<DailyReportRunner>();
+            await runner.RunAsync(ct: ct);
         }
         catch (Exception ex)
         {

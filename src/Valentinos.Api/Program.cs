@@ -26,6 +26,7 @@ if (builder.Environment.IsDevelopment() && !smtpEnabled)
 
 // Servicio de envío de reportes + scheduler diario (10:00 hora local).
 builder.Services.AddScoped<Valentinos.Api.Reports.ReportEmailer>();
+builder.Services.AddScoped<Valentinos.Api.Reports.DailyReportRunner>();
 builder.Services.AddHostedService<Valentinos.Api.Reports.DailyReportScheduler>();
 
 // Autenticación por cookie para el panel admin.
