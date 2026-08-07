@@ -330,11 +330,28 @@ $@"<tr><td style=""padding:9px 0;border-bottom:1px solid #e5e9f0;color:#64748b;f
         var generatedAt = first?.GeneratedAt ?? DateTime.Now;
         var siteWord = sites.Count == 1 ? "site" : "sites";
 
-        // Un bloque por site (título del site + tabla de conteos + problemas).
+        // Un bloque por site (título del site + tabla de conteos + problemas + actividad reciente).
         var blocks = new StringBuilder();
         foreach (var m in sites)
         {
             var problems = m.ProblemAssets.Count > 0 ? string.Join(", ", m.ProblemAssets) : "None";
+
+            // Actividad reciente: quién hizo cada check-in (evita que el correo sea solo
+            // números — el destinatario del site ve nombre, equipo y hora/fecha).
+            var activity = new StringBuilder();
+            foreach (var r in m.Rows.Take(10))
+                activity.Append(
+$@"<tr><td style=""padding:5px 0;border-bottom:1px solid #eef2f7;color:#0f172a;font-size:12px;"">{H(r.Employee)}</td>
+   <td style=""padding:5px 0;border-bottom:1px solid #eef2f7;color:#0f172a;font-size:12px;"">{H(r.Vacuum)}</td>
+   <td style=""padding:5px 0;border-bottom:1px solid #eef2f7;color:#64748b;font-size:12px;text-align:right;"">{H(r.When)}</td></tr>");
+            var activitySection = activity.Length == 0 ? "" :
+$@"      <tr><td style=""padding:4px 28px 8px;""><table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"">
+          <tr><td style=""padding:5px 0;color:#94a3b8;font-size:11px;text-transform:uppercase;"">Employee</td>
+              <td style=""padding:5px 0;color:#94a3b8;font-size:11px;text-transform:uppercase;"">Vacuum</td>
+              <td style=""padding:5px 0;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:right;"">When</td></tr>
+          {activity}
+      </table></td></tr>";
+
             blocks.Append(
 $@"      <tr><td style=""padding:18px 28px 0;"">
         <div style=""font-size:15px;font-weight:800;color:#1560A8;border-bottom:2px solid #e5e9f0;padding-bottom:8px;"">{H($"{pName} Report — {SiteLabel(m.TenantName)}")}</div>
@@ -348,7 +365,8 @@ $@"      <tr><td style=""padding:18px 28px 0;"">
       </table></td></tr>
       <tr><td style=""padding:4px 28px 8px;"">
         <div style=""background:#f8fafc;border:1px solid #e5e9f0;border-radius:10px;padding:10px 14px;color:#0f172a;font-size:13px;"">Vacuums with problems: <b>{H(problems)}</b></div>
-      </td></tr>");
+      </td></tr>
+{activitySection}");
         }
 
         return
