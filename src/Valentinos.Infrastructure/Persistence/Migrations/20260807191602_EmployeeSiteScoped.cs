@@ -29,12 +29,20 @@ namespace Valentinos.Infrastructure.Persistence.Migrations
 
             // Backfill: los empleados existentes son todos del site 069. Va en la
             // migración y no en el seeder para que se aplique aunque DemoSeeder no corra.
+            // Envuelto en EXEC(...) para que sea batch-safe también cuando se genera como
+            // script SQL (dotnet ef migrations script): en ese modo el ADD COLUMN y el
+            // UPDATE caen en el mismo batch y SQL Server resuelve nombres de columna para
+            // el batch completo antes de ejecutar, fallando con "Invalid column name
+            // 'SiteId'". Con MigrateAsync() cada Sql() ya es su propio batch, así que esto
+            // no cambia el comportamiento en el camino real de la app.
             migrationBuilder.Sql(@"
-                UPDATE e
-                SET e.SiteId = s.Id
-                FROM Employees e
-                INNER JOIN Sites s ON s.TenantId = e.TenantId AND s.Code = '069'
-                WHERE e.SiteId = '00000000-0000-0000-0000-000000000000';");
+                EXEC('
+                    UPDATE e
+                    SET e.SiteId = s.Id
+                    FROM Employees e
+                    INNER JOIN Sites s ON s.TenantId = e.TenantId AND s.Code = ''069''
+                    WHERE e.SiteId = ''00000000-0000-0000-0000-000000000000'';
+                ');");
         }
 
         /// <inheritdoc />
