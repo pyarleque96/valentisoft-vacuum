@@ -39,13 +39,13 @@ public class DailyReportRunner
                 {
                     var sent = await _emailer.SendSiteAsync(tenant, site, period, asOf, ct);
                     if (sent.Count > 0)
-                        _logger.LogInformation("📍 Reporte del site {Site} enviado a {To}",
-                            site.Code, string.Join(", ", sent));
+                        _logger.LogInformation("📍 Reporte del site {Site} enviado a {To} a las {Now:yyyy-MM-dd HH:mm:ss}",
+                            site.Code, string.Join(", ", sent), DateTime.Now);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Fallo al enviar el reporte del site {Site} ({Tenant})",
-                        site.Code, tenant.Nombre);
+                    _logger.LogError(ex, "Fallo al enviar el reporte del site {Site} ({Tenant}) a las {Now:yyyy-MM-dd HH:mm:ss}",
+                        site.Code, tenant.Nombre, DateTime.Now);
                 }
             }
 
@@ -55,12 +55,13 @@ public class DailyReportRunner
             {
                 var sent = await _emailer.SendAsync(tenant, period, asOf: asOf, ct: ct);
                 if (sent.Count > 0)
-                    _logger.LogInformation("📅 Reporte consolidado ({Tenant}) enviado a {To}",
-                        tenant.Nombre, string.Join(", ", sent));
+                    _logger.LogInformation("📅 Reporte consolidado ({Tenant}) enviado a {To} a las {Now:yyyy-MM-dd HH:mm:ss}",
+                        tenant.Nombre, string.Join(", ", sent), DateTime.Now);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Fallo al enviar el reporte consolidado de {Tenant}", tenant.Nombre);
+                _logger.LogError(ex, "Fallo al enviar el reporte consolidado de {Tenant} a las {Now:yyyy-MM-dd HH:mm:ss}",
+                    tenant.Nombre, DateTime.Now);
             }
         }
     }
