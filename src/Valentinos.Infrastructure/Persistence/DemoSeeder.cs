@@ -69,10 +69,15 @@ public static class DemoSeeder
             }
             // El placeholder "002" pasa a ser el site real "127 HCC". Si el code ya fue
             // cambiado a otra cosa desde el panel, no se toca.
-            if (existing.Code == "002" && s.Code == "127 HCC") existing.Code = s.Code;
-            // Los emails solo se siembran si están vacíos: no pisar lo editado en el panel.
-            if (string.IsNullOrWhiteSpace(existing.Emails) && !string.IsNullOrWhiteSpace(s.Emails))
-                existing.Emails = s.Emails;
+            if (existing.Code == "002" && s.Code == "127 HCC")
+            {
+                existing.Code = s.Code;
+                // Los emails solo se siembran EN ESTE MOMENTO de la transición (una sola
+                // vez) y solo si están vacíos: si el admin los borró explícitamente
+                // después, un reinicio del seeder no debe resucitarlos.
+                if (string.IsNullOrWhiteSpace(existing.Emails) && !string.IsNullOrWhiteSpace(s.Emails))
+                    existing.Emails = s.Emails;
+            }
         }
         await db.SaveChangesAsync();
 
@@ -115,6 +120,17 @@ public static class DemoSeeder
         if (huerfanos.Count > 0)
         {
             foreach (var a in huerfanos) a.SiteId = site069.Id;
+            await db.SaveChangesAsync();
+        }
+
+        // Backfill: empleados existentes sin site (SiteId vacío) -> Site 069. Si el
+        // backfill de la migración EmployeeSiteScoped no matcheó (p. ej. el Code del
+        // site 069 fue editado desde el panel antes de correr la migración), esto evita
+        // que SeedEmployeesAsync los duplique al no encontrarlos ya asignados.
+        var huerfanosEmpleados = await db.Employees.Where(e => e.SiteId == Guid.Empty).ToListAsync();
+        if (huerfanosEmpleados.Count > 0)
+        {
+            foreach (var e in huerfanosEmpleados) e.SiteId = site069.Id;
             await db.SaveChangesAsync();
         }
 

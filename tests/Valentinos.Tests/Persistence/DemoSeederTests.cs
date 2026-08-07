@@ -115,4 +115,26 @@ public class DemoSeederTests
         Assert.Equal("127 HCC", site.Code);
         Assert.Equal("otro@mastercorp.com", site.Emails);
     }
+
+    [Fact]
+    public async Task Seed_SiElAdminBorraLosEmailsDespuesDeLaMigracion_UnReinicioNoLosResucita()
+    {
+        var (db, ctx) = NewDbConTenant();
+
+        // Primer arranque: la migración "002" -> "127 HCC" siembra los emails.
+        await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
+        var site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");
+        Assert.Equal(Emails127, site.Emails);
+
+        // El admin borra los destinatarios desde el panel (AdminController.SaveSite guarda null).
+        site.Emails = null;
+        await db.SaveChangesAsync();
+
+        // Segundo arranque (reinicio de la app): el seeder no debe volver a sembrarlos,
+        // porque la transición "002" -> "127 HCC" ya ocurrió.
+        await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
+
+        site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");
+        Assert.Null(site.Emails);
+    }
 }
