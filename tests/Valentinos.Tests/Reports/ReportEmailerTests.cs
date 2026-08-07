@@ -62,14 +62,14 @@ public class ReportEmailerTests
         var hoy = DateTime.Today.AddHours(9);
         db.StatusCheckins.Add(new StatusCheckin
         {
-            SiteId = s069.Id, EmployeeName = "EmpleadoDel069", AssetCodigo = "VAC-001",
-            EstadoKey = "operational", CreatedAt = hoy
+            SiteId = s069.Id, EmployeeName = "EmpleadoDel069", AssetCodigo = "VAC-SOLO069",
+            EstadoKey = "NoFunciona", CreatedAt = hoy
         });
         if (conActividadEn127)
             db.StatusCheckins.Add(new StatusCheckin
             {
-                SiteId = s127.Id, EmployeeName = "EmpleadoDel127", AssetCodigo = "VAC-TIMESQUARE",
-                EstadoKey = "operational", CreatedAt = hoy
+                SiteId = s127.Id, EmployeeName = "EmpleadoDel127", AssetCodigo = "VAC-SOLO127",
+                EstadoKey = "NoFunciona", CreatedAt = hoy
             });
         db.SaveChanges();
 
@@ -108,8 +108,10 @@ public class ReportEmailerTests
         await NewEmailer(db, sender).SendSiteAsync(tenant, s127, "daily");
 
         var sent = Assert.Single(sender.Sends);
-        Assert.Contains("EmpleadoDel127", sent.Body);
-        Assert.DoesNotContain("EmpleadoDel069", sent.Body);
+        Assert.Contains("VAC-SOLO127", sent.Body);
+        Assert.Contains("Site 127 HCC", sent.Body);
+        Assert.DoesNotContain("VAC-SOLO069", sent.Body);
+        Assert.DoesNotContain("Site 069", sent.Body);
     }
 
     [Fact]
@@ -148,7 +150,7 @@ public class ReportEmailerTests
         var sent = Assert.Single(sender.Sends);
         Assert.Equal(new[] { "christopher.davey@mastercorp.com" }, sent.To);
         Assert.True(sent.IncludeCc);
-        Assert.Contains("EmpleadoDel069", sent.Body);
-        Assert.Contains("EmpleadoDel127", sent.Body);
+        Assert.Contains("VAC-SOLO069", sent.Body);
+        Assert.Contains("VAC-SOLO127", sent.Body);
     }
 }
