@@ -61,7 +61,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Employee>(e =>
         {
             e.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
-            e.HasIndex(x => new { x.TenantId, x.Nombre });
+            e.HasIndex(x => new { x.TenantId, x.SiteId, x.Nombre });
         });
 
         modelBuilder.Entity<Site>(e =>
