@@ -77,8 +77,8 @@ public class SmtpEmailSender : IEmailSender
         try
         {
             await client.SendMailAsync(message, ct);
-            _logger.LogInformation("📧 Email enviado a {To} vía {Host}:{Port}",
-                string.Join(", ", to), _options.Host, _options.Port);
+            _logger.LogInformation("📧 Email enviado a {To} vía {Host}:{Port} a las {Now:yyyy-MM-dd HH:mm:ss}",
+                string.Join(", ", to), _options.Host, _options.Port, DateTime.Now);
         }
         catch (Exception ex)
         {

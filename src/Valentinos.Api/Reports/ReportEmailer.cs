@@ -112,10 +112,11 @@ public class ReportEmailer
         var body = KpiHtml.RenderReportEmail(tenant.Nombre, models);
         var att = new EmailAttachment(pdf, $"KPI-{pName}-{now:yyyy-MM-dd}.pdf", "application/pdf");
 
+        var handOff = DateTime.Now;
         await _email.SendAsync(to, subject, body, isHtml: true, attachment: att,
             includeConfiguredCc: includeCc, ct: ct);
-        _logger.LogInformation("📄 Reporte {P} ({Sites} sites) enviado a {To} (PDF {Bytes} bytes)",
-            pName, models.Count, string.Join(", ", to), pdf.Length);
+        _logger.LogInformation("📄 Reporte {P} ({Sites} sites) enviado a {To} (PDF {Bytes} bytes) a las {HandOff:yyyy-MM-dd HH:mm:ss}",
+            pName, models.Count, string.Join(", ", to), pdf.Length, handOff);
         return to;
     }
 }
