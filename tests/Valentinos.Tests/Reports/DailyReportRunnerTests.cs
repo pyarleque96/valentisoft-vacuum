@@ -38,7 +38,7 @@ public class DailyReportRunnerTests
     }
 
     // Tenant con: un site con destinatarios y actividad, y otro SIN destinatarios.
-    private static AppDbContext NewScenario()
+    private static AppDbContext NewScenario(string? notificationEmails = "christopher.davey@mastercorp.com")
     {
         var ctx = new FakeTenantContext();
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -46,7 +46,7 @@ public class DailyReportRunnerTests
         var db = new AppDbContext(options, ctx);
 
         var tenant = Tenant.Create("mastercorp", "MasterCorp");
-        tenant.NotificationEmails = "christopher.davey@mastercorp.com";
+        tenant.NotificationEmails = notificationEmails;
         db.Tenants.Add(tenant);
         db.SaveChanges();
 
@@ -98,5 +98,19 @@ public class DailyReportRunnerTests
 
         var consolidado = Assert.Single(sender.Sends);
         Assert.Contains("christopher.davey@mastercorp.com", consolidado.To);
+    }
+
+    [Fact]
+    public async Task RunAsync_TenantSinNotificationEmails_EnviaSoloLosCorreosPorSite()
+    {
+        var db = NewScenario(notificationEmails: null);
+        var sender = new RecordingEmailSender();
+
+        await NewRunner(db, sender).RunAsync();
+
+        var unico = Assert.Single(sender.Sends);
+        Assert.Contains("ramces.rodriguez@mastercorp.com", unico.To);
+        Assert.False(unico.IncludeCc);
+        Assert.DoesNotContain(sender.Sends, s => s.To.Contains("christopher.davey@mastercorp.com"));
     }
 }
