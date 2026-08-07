@@ -140,7 +140,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     {
         var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
         await DemoSeeder.SeedAsync(db, tenantContext,
-            "christopher.strait@mastercorp.com,christopher.davey@mastercorp.com");
+            "christopher.davey@mastercorp.com");
     }
 }
 
