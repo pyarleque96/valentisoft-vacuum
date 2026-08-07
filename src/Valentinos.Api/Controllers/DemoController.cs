@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -206,6 +207,16 @@ public class DemoController : ControllerBase
     }
 
     private Guid Tid => _tenant.TenantId ?? Guid.Empty;
+
+    // Defensa en profundidad para las rutas autenticadas de este controlador: el tenant
+    // del claim de la cookie DEBE coincidir con el del subdominio. Las cookies son
+    // host-only, así que el cruce no ocurre en condiciones normales; esto lo cierra igual,
+    // con el mismo criterio que ya aplica AdminController.
+    private bool TenantDelUsuarioCoincide()
+    {
+        var claim = User.FindFirstValue("tenant");
+        return Guid.TryParse(claim, out var userTenant) && userTenant != Guid.Empty && userTenant == Tid;
+    }
 
     // Generador de QR de un SITE (panel admin). Acepta guid o slug.
     // Vista pública (solo lectura): el generador de QR es accesible sin login.
@@ -446,13 +457,15 @@ public class DemoController : ControllerBase
         return def?.Slug;
     }
 
-    // Vista pública (solo lectura): dashboard de KPIs en /reports?site={slugOrGuid}.
-    // Si no se pasa site, usa el site por defecto. La página trae un dropdown con
-    // los sites disponibles del tenant (el actual queda seleccionado).
-    [AllowAnonymous]
+    // Vista PRIVADA (admin): dashboard de KPIs multi-site en /reports?site={slugOrGuid}.
+    // Si no se pasa site, usa el site por defecto. Trae el dropdown con los sites del
+    // tenant. La vista pública por site vive en /{siteSlug}/reports.
+    [Authorize(Roles = "admin")]
     [HttpGet("/reports")]
     public async Task<IActionResult> KpiPage([FromQuery] string? site, [FromQuery] string? period)
     {
+        if (!TenantDelUsuarioCoincide()) return Redirect("/login");
+
         var key = await ReportsSiteKeyAsync(site);
         if (string.IsNullOrWhiteSpace(key)) return NotFound();
         var (tenant, s, list, unav) = await LoadSiteCheckinsAsync(key);
@@ -488,11 +501,13 @@ public class DemoController : ControllerBase
         return Content(msg, "text/plain; charset=utf-8");
     }
 
-    // Parte de la vista pública de reportes (descargar el PDF): /reports/pdf?site={key}.
-    [AllowAnonymous]
+    // Vista PRIVADA (admin): descarga el PDF del dashboard multi-site en /reports/pdf?site={key}.
+    [Authorize(Roles = "admin")]
     [HttpGet("/reports/pdf")]
     public async Task<IActionResult> KpiPdfPreview([FromQuery] string? site, [FromQuery] string? period)
     {
+        if (!TenantDelUsuarioCoincide()) return Redirect("/login");
+
         var key = await ReportsSiteKeyAsync(site);
         if (string.IsNullOrWhiteSpace(key)) return NotFound();
         var (tenant, s, list, unav) = await LoadSiteCheckinsAsync(key);
