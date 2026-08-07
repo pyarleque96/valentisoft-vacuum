@@ -25,7 +25,18 @@ if (builder.Environment.IsDevelopment() && !smtpEnabled)
     builder.Services.AddScoped<IEmailSender, ConsoleEmailSender>();
 
 // Servicio de envío de reportes + scheduler diario (10:00 hora local).
+// El estado (última fecha enviada) se guarda bajo el mismo root que el resto del
+// almacenamiento en archivo (FileStorage:RootPath, por defecto "storage"), para no
+// introducir una segunda convención de rutas.
+builder.Services.AddSingleton(sp =>
+{
+    var storageRoot = sp.GetRequiredService<Valentinos.Application.Storage.FileStorageOptions>().RootPath;
+    var path = Path.Combine(storageRoot, "daily-report-state.txt");
+    var logger = sp.GetRequiredService<ILogger<Valentinos.Api.Reports.DailyReportState>>();
+    return new Valentinos.Api.Reports.DailyReportState(path, logger);
+});
 builder.Services.AddScoped<Valentinos.Api.Reports.ReportEmailer>();
+builder.Services.AddScoped<Valentinos.Api.Reports.DailyReportRunner>();
 builder.Services.AddHostedService<Valentinos.Api.Reports.DailyReportScheduler>();
 
 // Autenticación por cookie para el panel admin.
@@ -139,7 +150,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     {
         var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
         await DemoSeeder.SeedAsync(db, tenantContext,
-            "christopher.strait@mastercorp.com,christopher.davey@mastercorp.com");
+            "christopher.davey@mastercorp.com");
     }
 }
 

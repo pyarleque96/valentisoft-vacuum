@@ -13,7 +13,7 @@ using Valentinos.Infrastructure.Persistence;
 namespace Valentinos.Api.Controllers;
 
 // Panel de administración (solo admin autenticado): gestión de sites de un tenant,
-// sus encargados (CC del reporte) y sus vacuums.
+// sus destinatarios de notificación y sus vacuums.
 [ApiController]
 [Authorize(Roles = "admin")]
 public class AdminController : ControllerBase, IActionFilter
@@ -77,7 +77,7 @@ public class AdminController : ControllerBase, IActionFilter
         {
             Code = c,
             Slug = await UniqueSlugAsync(),
-            CcEmails = NormalizeEmails(cc)
+            Emails = NormalizeEmails(cc)
         });
         await _db.SaveChangesAsync();
         return Redirect("/admin/sites");
@@ -105,7 +105,7 @@ public class AdminController : ControllerBase, IActionFilter
         if (site is null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(code)) site.Code = code.Trim();
-        site.CcEmails = NormalizeEmails(cc);
+        site.Emails = NormalizeEmails(cc);
         await _db.SaveChangesAsync();
         return Redirect($"/admin/sites/{site.Slug}");
     }
@@ -189,7 +189,7 @@ public class AdminController : ControllerBase, IActionFilter
         foreach (var s in sites)
         {
             var n = counts.TryGetValue(s.Id, out var c) ? c : 0;
-            var cc = string.IsNullOrWhiteSpace(s.CcEmails) ? "<span class=\"muted\">—</span>" : WebUtility.HtmlEncode(s.CcEmails);
+            var cc = string.IsNullOrWhiteSpace(s.Emails) ? "<span class=\"muted\">—</span>" : WebUtility.HtmlEncode(s.Emails);
             rows.Append($@"<tr>
               <td><b class=""mono"">{WebUtility.HtmlEncode(s.Code)}</b></td>
               <td>{n}</td>
@@ -208,7 +208,7 @@ public class AdminController : ControllerBase, IActionFilter
   <div class=""card"">
     <h2>Sites</h2>
     <div class=""tblwrap""><table>
-      <thead><tr><th>Site</th><th>Vacuums</th><th>Recipients (CC)</th><th></th></tr></thead>
+      <thead><tr><th>Site</th><th>Vacuums</th><th>Emails</th><th></th></tr></thead>
       <tbody>{rows}</tbody>
     </table></div>
   </div>
@@ -218,7 +218,7 @@ public class AdminController : ControllerBase, IActionFilter
     <h2>New site</h2>
     <form method=""post"" action=""/admin/sites"" class=""grid"">
       <div><label>Code</label><input name=""code"" placeholder=""e.g. 070"" disabled></div>
-      <div class=""full""><label>Recipients (CC) — comma separated</label><input name=""cc"" placeholder=""manager@company.com"" disabled></div>
+      <div class=""full""><label>Emails — comma separated</label><input name=""cc"" placeholder=""manager@company.com"" disabled></div>
       <div class=""full""><button type=""submit"" disabled>Create site</button></div>
     </form>
   </div>";
@@ -245,8 +245,8 @@ public class AdminController : ControllerBase, IActionFilter
     <h2>Site {WebUtility.HtmlEncode(site.Code)} <span class=""mono muted"">/{WebUtility.HtmlEncode(site.Slug)}</span></h2>
     <form id=""siteForm"" method=""post"" action=""/admin/sites/{site.Slug}"" class=""grid"">
       <div><label>Code</label><input name=""code"" value=""{WebUtility.HtmlEncode(site.Code)}"" required></div>
-      <div class=""full""><label>Recipients (CC) — comma separated</label>
-        <input id=""ccInput"" name=""cc"" value=""{WebUtility.HtmlEncode(site.CcEmails ?? "")}"" placeholder=""manager@company.com"">
+      <div class=""full""><label>Emails — comma separated</label>
+        <input id=""ccInput"" name=""cc"" value=""{WebUtility.HtmlEncode(site.Emails ?? "")}"" placeholder=""manager@company.com"">
         <div class=""fielderr"" id=""ccErr""></div></div>
       <div class=""full""><button type=""submit"">Save changes</button></div>
     </form>
@@ -284,7 +284,7 @@ public class AdminController : ControllerBase, IActionFilter
       document.addEventListener('keydown', function (e) {{ if (e.key === 'Escape') bg.classList.remove('open'); }});
       document.getElementById('addConfirm').addEventListener('click', function () {{ form.submit(); }});
     }})();
-    // Validación de Recipients (CC): emails separados por coma; si hay error, muestra ejemplo.
+    // Validación de Emails: separados por coma; si hay error, muestra ejemplo.
     (function () {{
       var f = document.getElementById('siteForm'), inp = document.getElementById('ccInput'), err = document.getElementById('ccErr');
       var re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -395,7 +395,7 @@ public class AdminController : ControllerBase, IActionFilter
   .mbtn.primary {{ background:#1560A8; color:#fff; }} .mbtn.primary:hover {{ background:#0f4c85; }}
   @media (max-width:560px) {{
     .grid {{ grid-template-columns:1fr; }}
-    /* En móvil ocultar la columna Recipients (CC) del grid. */
+    /* En móvil ocultar la columna Emails del grid. */
     .tblwrap th:nth-child(3), .tblwrap td:nth-child(3) {{ display:none; }}
   }}
 </style></head>

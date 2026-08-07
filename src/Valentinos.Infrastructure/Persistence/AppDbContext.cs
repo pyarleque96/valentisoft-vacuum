@@ -61,14 +61,14 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Employee>(e =>
         {
             e.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
-            e.HasIndex(x => new { x.TenantId, x.Nombre });
+            e.HasIndex(x => new { x.TenantId, x.SiteId, x.Nombre });
         });
 
         modelBuilder.Entity<Site>(e =>
         {
             e.Property(x => x.Code).HasMaxLength(50).IsRequired();
             e.Property(x => x.Slug).HasMaxLength(60).IsRequired();
-            e.Property(x => x.CcEmails).HasMaxLength(1000);
+            e.Property(x => x.Emails).HasMaxLength(1000);
             e.HasIndex(x => x.Slug).IsUnique();
             e.HasIndex(x => new { x.TenantId, x.Code });
         });

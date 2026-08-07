@@ -372,7 +372,7 @@ public class DemoController : ControllerBase
         return Ok(new { ok = true });
     }
 
-    // Lista de empleados del tenant del site (para el autocompletar del formulario).
+    // Lista de empleados DEL SITE (para el autocompletar del formulario).
     [HttpGet("/api/public/{siteSlug}/employees")]
     public async Task<IActionResult> Employees(string siteSlug)
     {
@@ -380,7 +380,7 @@ public class DemoController : ControllerBase
         if (tenant is null || site is null) return NotFound();
 
         var names = await _db.Employees.IgnoreQueryFilters()
-            .Where(e => e.TenantId == tenant.Id)
+            .Where(e => e.TenantId == tenant.Id && e.SiteId == site.Id)
             .OrderBy(e => e.Nombre)
             .Select(e => e.Nombre)
             .ToListAsync();

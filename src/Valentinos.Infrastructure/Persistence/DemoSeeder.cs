@@ -44,15 +44,16 @@ public static class DemoSeeder
             await db.SaveChangesAsync();
         }
 
-        // ---- Sites: Site 069 (con sus vacuums + ramces CC) + 3 sites nuevos ----
-        // Slugs fijos (idempotente): los definidos aquí no cambian al reiniciar.
+        // ---- Sites del tenant. La identidad estable es el SLUG (el Code puede
+        // cambiar: el placeholder "002" se convirtió en el site real "127 HCC"). ----
         var seedSites = new[]
         {
-            (Code: "069", Slug: "XjUS3", Cc: "ramces.rodriguez@mastercorp.com"),
-            (Code: "002", Slug: "Kp7Qm", Cc: (string?)null),
-            (Code: "003", Slug: "Ra9Zt", Cc: (string?)null),
-            (Code: "004", Slug: "Bn4Wc", Cc: (string?)null),
+            (Code: "069", Slug: "XjUS3", Emails: (string?)"ramces.rodriguez@mastercorp.com"),
+            (Code: "127 HCC", Slug: "Kp7Qm", Emails: (string?)"learsy.betancourt@mastercorp.com, carlos.reyes@mastercorp.com, gilberto.espinoza@mastercorp.com"),
+            (Code: "003", Slug: "Ra9Zt", Emails: (string?)null),
+            (Code: "004", Slug: "Bn4Wc", Emails: (string?)null),
         };
+
         // Migración de slugs viejos con prefijo "site-" -> sin prefijo (idempotente).
         foreach (var old in await db.Sites.Where(x => x.Slug.StartsWith("site-")).ToListAsync())
             old.Slug = old.Slug.Substring(5);
@@ -60,12 +61,28 @@ public static class DemoSeeder
 
         foreach (var s in seedSites)
         {
-            var existing = await db.Sites.FirstOrDefaultAsync(x => x.Code == s.Code);
+            var existing = await db.Sites.FirstOrDefaultAsync(x => x.Slug == s.Slug);
             if (existing is null)
-                db.Sites.Add(new Site { Code = s.Code, Slug = s.Slug, CcEmails = s.Cc });
+            {
+                db.Sites.Add(new Site { Code = s.Code, Slug = s.Slug, Emails = s.Emails });
+                continue;
+            }
+            // El placeholder "002" pasa a ser el site real "127 HCC". Si el code ya fue
+            // cambiado a otra cosa desde el panel, no se toca.
+            if (existing.Code == "002" && s.Code == "127 HCC")
+            {
+                existing.Code = s.Code;
+                // Los emails solo se siembran EN ESTE MOMENTO de la transición (una sola
+                // vez) y solo si están vacíos: si el admin los borró explícitamente
+                // después, un reinicio del seeder no debe resucitarlos.
+                if (string.IsNullOrWhiteSpace(existing.Emails) && !string.IsNullOrWhiteSpace(s.Emails))
+                    existing.Emails = s.Emails;
+            }
         }
         await db.SaveChangesAsync();
-        var site069 = await db.Sites.FirstAsync(x => x.Code == "069");
+
+        var site069 = await db.Sites.FirstAsync(x => x.Slug == "XjUS3");
+        var site127 = await db.Sites.FirstAsync(x => x.Slug == "Kp7Qm");
 
         // ---- Usuarios admin del tenant. Password hasheada (PBKDF2). ----
         // NOTA: credenciales semilla de demo; cambiar en un entorno real.
@@ -92,20 +109,11 @@ public static class DemoSeeder
             u.SecurityStamp = Guid.NewGuid().ToString("N");
         await db.SaveChangesAsync();
 
-        // Sembrar hasta 16 vacuums (VAC-001..VAC-016) en el Site 069.
-        var nAssets = await db.Assets.CountAsync(a => a.AssetTypeId == tipo.Id);
-        for (var i = nAssets; i < 16; i++)
-        {
-            tipo.CorrelativoActual += 1;
-            db.Assets.Add(new Asset
-            {
-                AssetTypeId = tipo.Id,
-                SiteId = site069.Id,
-                Codigo = $"{tipo.Prefijo}-{tipo.CorrelativoActual:D3}",
-                Estado = AssetEstado.Activo
-            });
-        }
-        await db.SaveChangesAsync();
+        // Vacuums por site. La numeración es POR SITE desde la migración
+        // SiteScopedVacuumCode, así que NO se usa el contador global del AssetType
+        // (que es compartido entre sites) ni un conteo global de assets.
+        await SeedVacuumsAsync(db, tipo.Id, site069.Id, Vacuums069);
+        await SeedVacuumsAsync(db, tipo.Id, site127.Id, Vacuums127);
 
         // Backfill: vacuums existentes sin site (SiteId vacío) -> Site 069.
         var huerfanos = await db.Assets.Where(a => a.SiteId == Guid.Empty).ToListAsync();
@@ -115,13 +123,20 @@ public static class DemoSeeder
             await db.SaveChangesAsync();
         }
 
-        // Empleados de MasterCorp (para el autocompletar del formulario).
-        if (!await db.Employees.AnyAsync())
+        // Backfill: empleados existentes sin site (SiteId vacío) -> Site 069. Si el
+        // backfill de la migración EmployeeSiteScoped no matcheó (p. ej. el Code del
+        // site 069 fue editado desde el panel antes de correr la migración), esto evita
+        // que SeedEmployeesAsync los duplique al no encontrarlos ya asignados.
+        var huerfanosEmpleados = await db.Employees.Where(e => e.SiteId == Guid.Empty).ToListAsync();
+        if (huerfanosEmpleados.Count > 0)
         {
-            foreach (var nombre in Empleados)
-                db.Employees.Add(new Employee { Nombre = nombre });
+            foreach (var e in huerfanosEmpleados) e.SiteId = site069.Id;
             await db.SaveChangesAsync();
         }
+
+        // Empleados POR SITE (para el autocompletar del formulario de cada site).
+        await SeedEmployeesAsync(db, site069.Id, Empleados069);
+        await SeedEmployeesAsync(db, site127.Id, Empleados127);
 
         // Sembrado de reportes fake DESACTIVADO (producción arranca limpio). Poner en true
         // solo si se quiere volver a poblar el dashboard con data de demo.
@@ -155,7 +170,7 @@ public static class DemoSeeder
 
                     list.Add(new StatusCheckin
                     {
-                        EmployeeName = Empleados[rnd.Next(Empleados.Length)],
+                        EmployeeName = Empleados069[rnd.Next(Empleados069.Length)],
                         AssetCodigo = code,
                         EstadoKey = est,
                         Nota = isProblem ? faults[rnd.Next(faults.Length)] : null,
@@ -188,7 +203,7 @@ public static class DemoSeeder
                 {
                     ureps.Add(new UnavailableReport
                     {
-                        EmployeeName = Empleados[rnd2.Next(Empleados.Length)],
+                        EmployeeName = Empleados069[rnd2.Next(Empleados069.Length)],
                         EquipmentType = "Vacuum",
                         Nota = rnd2.Next(4) == 0 ? null : reasons[rnd2.Next(reasons.Length)],
                         CreatedAt = day.AddHours(rnd2.Next(6, 20)).AddMinutes(rnd2.Next(60))
@@ -200,7 +215,56 @@ public static class DemoSeeder
         }
     }
 
-    private static readonly string[] Empleados =
+    // Alta idempotente de vacuums de un site: solo agrega los códigos que faltan.
+    private static async Task SeedVacuumsAsync(AppDbContext db, Guid assetTypeId, Guid siteId, string[] codigos)
+    {
+        var existentes = await db.Assets.Where(a => a.SiteId == siteId).Select(a => a.Codigo).ToListAsync();
+        foreach (var codigo in codigos)
+        {
+            if (existentes.Contains(codigo)) continue;
+            db.Assets.Add(new Asset
+            {
+                AssetTypeId = assetTypeId,
+                SiteId = siteId,
+                Codigo = codigo,
+                Estado = AssetEstado.Activo
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    // Alta idempotente de empleados de un site: solo agrega los nombres que faltan.
+    private static async Task SeedEmployeesAsync(AppDbContext db, Guid siteId, string[] nombres)
+    {
+        var existentes = await db.Employees.Where(e => e.SiteId == siteId).Select(e => e.Nombre).ToListAsync();
+        foreach (var nombre in nombres)
+        {
+            if (existentes.Contains(nombre)) continue;
+            db.Employees.Add(new Employee { SiteId = siteId, Nombre = nombre });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    // Site 069: 16 vacuums numerados.
+    private static readonly string[] Vacuums069 =
+        Enumerable.Range(1, 16).Select(i => $"VAC-{i:D3}").ToArray();
+
+    // Site 127 HCC: 11 numerados + los 2 janitorial con nombre propio.
+    private static readonly string[] Vacuums127 =
+        Enumerable.Range(1, 11).Select(i => $"VAC-{i:D3}")
+                  .Concat(new[] { "VAC-TIMESQUARE", "VAC-FRONTDESK" })
+                  .ToArray();
+
+    private static readonly string[] Empleados127 =
+    {
+        "Gonzalez Guerra, Yanet",
+        "Jeronimo, Brissman",
+        "Martea, Lidia",
+        "Pacheco, Wendy",
+        "Zdor, Galina"
+    };
+
+    private static readonly string[] Empleados069 =
     {
         "Castillo Carbajal, Leticia J",
         "Ffrench, Dothlyn",
