@@ -79,7 +79,8 @@ public class DemoSeederTests
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
-        Assert.Equal(4, await db.Sites.IgnoreQueryFilters().CountAsync());
+        // Solo 069 y 127 HCC: los placeholders 003 y 004 se eliminaron del seeder.
+        Assert.Equal(2, await db.Sites.IgnoreQueryFilters().CountAsync());
         Assert.Equal(29, await db.Assets.IgnoreQueryFilters().CountAsync());   // 16 del 069 + 13 del 127
         Assert.Equal(21, await db.Employees.IgnoreQueryFilters().CountAsync()); // 16 + 5
     }

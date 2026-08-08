@@ -50,8 +50,8 @@ public static class DemoSeeder
         {
             (Code: "069", Slug: "XjUS3", Emails: (string?)"ramces.rodriguez@mastercorp.com"),
             (Code: "127 HCC", Slug: "Kp7Qm", Emails: (string?)"learsy.betancourt@mastercorp.com, carlos.reyes@mastercorp.com, gilberto.espinoza@mastercorp.com"),
-            (Code: "003", Slug: "Ra9Zt", Emails: (string?)null),
-            (Code: "004", Slug: "Bn4Wc", Emails: (string?)null),
+            // Los placeholders 003 y 004 se eliminaron: no se siembran más. Si se
+            // vuelven a agregar aquí, reaparecerían en el panel al siguiente arranque.
         };
 
         // Migración de slugs viejos con prefijo "site-" -> sin prefijo (idempotente).
