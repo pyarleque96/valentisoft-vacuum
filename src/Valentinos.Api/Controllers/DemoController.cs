@@ -220,14 +220,17 @@ public class DemoController : ControllerBase
         return Guid.TryParse(claim, out var userTenant) && userTenant != Guid.Empty && userTenant == Tid;
     }
 
-    // Generador de QR de un SITE (panel admin). Acepta guid o slug.
-    // Vista pública (solo lectura): el generador de QR es accesible sin login.
-    // La gestión de sites/vacuums sigue protegida en AdminController.
+    // Generador de QR de un SITE: vista PÚBLICA por site, como el resto de rutas que
+    // arrancan con el slug. No es una vista de administración —solo lista e imprime los
+    // QR del site— y vivía bajo /admin/ siendo anónima, lo que confundía su alcance.
+    // Se resuelve por slug exacto (ResolveSiteAsync), sin aceptar guid ni caer al site
+    // por defecto: la URL manda.
     [AllowAnonymous]
-    [HttpGet("/admin/sites/{key}/qr")]
-    public async Task<IActionResult> QrGenerator(string key)
+    [EnableRateLimiting("public-reports")]
+    [HttpGet("/{siteSlug}/qr")]
+    public async Task<IActionResult> QrGenerator(string siteSlug)
     {
-        var (tenant, site) = await ResolveSiteInTenantAsync(key);
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
         if (tenant is null || site is null) return NotFound();
 
         var codes = VacuumOrder.Sort(await _db.Assets.IgnoreQueryFilters()
@@ -236,6 +239,16 @@ public class DemoController : ControllerBase
 
         return Content(QrGeneratorHtml(tenant.Nombre, site, codes, PublicBaseUrl()),
             "text/html; charset=utf-8");
+    }
+
+    // Compatibilidad: la URL anterior vivía bajo /admin/. Se mantiene redirigiendo para
+    // no romper links ya compartidos o anotados. Acepta guid o slug, como antes.
+    [AllowAnonymous]
+    [HttpGet("/admin/sites/{key}/qr")]
+    public async Task<IActionResult> QrGeneratorLegacy(string key)
+    {
+        var (_, site) = await ResolveSiteInTenantAsync(key);
+        return site is null ? NotFound() : Redirect($"/{site.Slug}/qr");
     }
 
     // Hoja PDF imprimible con TODOS los QRs del site (por defecto 6 por página).
