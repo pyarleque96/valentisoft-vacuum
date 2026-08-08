@@ -63,6 +63,14 @@ public class DemoController : ControllerBase
         Response.Headers.Pragma = "no-cache";
     }
 
+    // Sello de versión de las imágenes de QR. Cambia en cada arranque de la app, de
+    // modo que tras un despliegue la página pide URLs que ningún caché intermedio ha
+    // visto. Sin esto, Cloudflare siguió sirviendo el QR con la etiqueta vieja durante
+    // horas aunque el servidor ya devolvía la nueva: no-store frena las peticiones
+    // nuevas, pero no desaloja lo que ya estaba guardado.
+    private static readonly string QrAssetVersion =
+        DateTime.UtcNow.Ticks.ToString("x");
+
     private static string FixedUrl(string baseUrl, string siteSlug) =>
         $"{baseUrl}/{Uri.EscapeDataString(siteSlug)}/f/hk";
 
@@ -1297,12 +1305,12 @@ $@"<div class=""card"">
   <div class=""card qrbox"">
     <h1 style=""font-size:15px;margin:0 0 4px"" data-i18n=""fixedTitle"">Fixed QR · HOUSEKEEPING (NO VACUUM)</h1>
     <div class=""sub"" style=""margin-bottom:12px"" data-i18n=""fixedDesc"">To report unavailable equipment (without scanning a specific one).</div>
-    <div class=""qrframe""><img alt=""QR fijo housekeeping"" src=""/qr/{slugUrl}/fixed.png?base={baseParam}""><button type=""button"" class=""qr-dl"" id=""saveFixed"" title=""Save"" aria-label=""Save"">{dlIco}</button></div>
+    <div class=""qrframe""><img alt=""QR fijo housekeeping"" src=""/qr/{slugUrl}/fixed.png?base={baseParam}&amp;v={QrAssetVersion}""><button type=""button"" class=""qr-dl"" id=""saveFixed"" title=""Save"" aria-label=""Save"">{dlIco}</button></div>
     <div class=""urlrow"">
       <div class=""urlbox"" id=""urlFixed"">{fixedUrlH}</div>
       <button type=""button"" class=""copybtn"" id=""copyFixed"" title=""Copy"" aria-label=""Copy"">{clip}</button>
     </div>
-    <a class=""btn"" href=""/qr/{slugUrl}/fixed.png?base={baseParam}&amp;download=1"" data-i18n=""dlFixed"" download>⬇ Download fixed QR</a>
+    <a class=""btn"" href=""/qr/{slugUrl}/fixed.png?base={baseParam}&amp;download=1&amp;v={QrAssetVersion}"" data-i18n=""dlFixed"" download>⬇ Download fixed QR</a>
   </div>
 </div>
 
@@ -1315,7 +1323,7 @@ $@"<div class=""card"">
   </div>
 </div>
 <script>
-  const SLUG = {slugJs}, BASE = {baseJs};
+  const SLUG = {slugJs}, BASE = {baseJs}, QRV = ""{QrAssetVersion}"";
   const HAS_VAC = {hasVacJs};
   function printGuard(e){{ if(!HAS_VAC){{ e.preventDefault(); document.getElementById('noVacModal').classList.add('show'); return false; }} return true; }}
   function closeNoVac(){{ document.getElementById('noVacModal').classList.remove('show'); }}
@@ -1371,7 +1379,7 @@ $@"<div class=""card"">
     const code = (codeEl.value || 'VAC-001').trim();
     const logo = logoEl.checked ? 'mastercorp' : '0';
     let u = '/qr/' + encodeURIComponent(SLUG) + '/img.png?code=' + encodeURIComponent(code)
-          + '&logo=' + logo + '&base=' + encodeURIComponent(BASE);
+          + '&logo=' + logo + '&base=' + encodeURIComponent(BASE) + '&v=' + QRV;
     if (dl) u += '&download=1';
     return u;
   }}
@@ -1419,7 +1427,7 @@ $@"<div class=""card"">
     saveImage(imgUrl(false), 'QR-' + code + '.png', this);
   }});
   document.getElementById('saveFixed').addEventListener('click', function () {{
-    saveImage('/qr/' + encodeURIComponent(SLUG) + '/fixed.png?base=' + encodeURIComponent(BASE), 'QR-housekeeping-no-vacuum.png', this);
+    saveImage('/qr/' + encodeURIComponent(SLUG) + '/fixed.png?base=' + encodeURIComponent(BASE) + '&v=' + QRV, 'QR-housekeeping-no-vacuum.png', this);
   }});
   acWire();
   refresh();
