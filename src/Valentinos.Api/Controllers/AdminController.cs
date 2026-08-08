@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
+using Valentinos.Api.Assets;
 using Valentinos.Application.Abstractions;
 using Valentinos.Domain.Entities;
 using Valentinos.Domain.Enums;
@@ -91,9 +92,10 @@ public class AdminController : ControllerBase, IActionFilter
         var site = await FindSiteAsync(key);
         if (tenant is null || site is null) return NotFound();
 
-        var vacuums = await _db.Assets.IgnoreQueryFilters()
+        var codigos = await _db.Assets.IgnoreQueryFilters()
             .Where(a => a.SiteId == site.Id && a.Estado == AssetEstado.Activo)
-            .OrderBy(a => a.Codigo).Select(a => a.Codigo).ToListAsync();
+            .Select(a => a.Codigo).ToListAsync();
+        var vacuums = VacuumOrder.Sort(codigos);
 
         return Content(SiteConfigHtml(tenant.Nombre, site, vacuums), "text/html; charset=utf-8");
     }
@@ -147,11 +149,9 @@ public class AdminController : ControllerBase, IActionFilter
     }
 
     // ---------- helpers ----------
-    private static int ParseVacNumber(string codigo)
-    {
-        var dash = codigo.LastIndexOf('-');
-        return dash >= 0 && int.TryParse(codigo[(dash + 1)..], out var n) ? n : 0;
-    }
+    // Los códigos de nombre propio (VAC-FRONTDESK) no aportan número y cuentan como 0,
+    // para que "Add vacuums" siga numerando desde el mayor correlativo real.
+    private static int ParseVacNumber(string codigo) => VacuumOrder.Numero(codigo) ?? 0;
 
     private static string? NormalizeEmails(string? cc)
     {

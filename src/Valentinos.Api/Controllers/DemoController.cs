@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Valentinos.Api.Assets;
 using Valentinos.Application.Qr;
 using Valentinos.Infrastructure.Persistence;
 
@@ -229,9 +230,9 @@ public class DemoController : ControllerBase
         var (tenant, site) = await ResolveSiteInTenantAsync(key);
         if (tenant is null || site is null) return NotFound();
 
-        var codes = await _db.Assets.IgnoreQueryFilters()
+        var codes = VacuumOrder.Sort(await _db.Assets.IgnoreQueryFilters()
             .Where(a => a.SiteId == site.Id && a.Estado == Domain.Enums.AssetEstado.Activo)
-            .OrderBy(a => a.Codigo).Select(a => a.Codigo).ToListAsync();
+            .Select(a => a.Codigo).ToListAsync());
 
         return Content(QrGeneratorHtml(tenant.Nombre, site, codes, PublicBaseUrl()),
             "text/html; charset=utf-8");
@@ -246,9 +247,9 @@ public class DemoController : ControllerBase
         var site = await _db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Slug == siteSlug && s.TenantId == Tid);
         if (site is null) return NotFound();
 
-        var codes = await _db.Assets.IgnoreQueryFilters()
+        var codes = VacuumOrder.Sort(await _db.Assets.IgnoreQueryFilters()
             .Where(a => a.SiteId == site.Id && a.Estado == Domain.Enums.AssetEstado.Activo)
-            .OrderBy(a => a.Codigo).Select(a => a.Codigo).ToListAsync();
+            .Select(a => a.Codigo).ToListAsync());
 
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
         var logo = LoadBrandLogo("mastercorp");
@@ -558,11 +559,10 @@ public class DemoController : ControllerBase
             .FirstOrDefaultAsync(t => t.Slug == slug);
         if (tenant is null) return NotFound();
 
-        var assets = await _db.Assets.IgnoreQueryFilters()
+        var assets = VacuumOrder.Sort(await _db.Assets.IgnoreQueryFilters()
             .Where(a => a.TenantId == tenant.Id)
-            .OrderBy(a => a.Codigo)
             .Select(a => a.Codigo)
-            .ToListAsync();
+            .ToListAsync());
 
         return Content(LandingHtml(tenant.Nombre, slug, assets, PublicBaseUrl()),
             "text/html; charset=utf-8");
