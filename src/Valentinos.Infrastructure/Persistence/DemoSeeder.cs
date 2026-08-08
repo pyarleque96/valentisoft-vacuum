@@ -45,11 +45,11 @@ public static class DemoSeeder
         }
 
         // ---- Sites del tenant. La identidad estable es el SLUG (el Code puede
-        // cambiar: el placeholder "002" se convirtió en el site real "127 HCC"). ----
+        // cambiar: el placeholder "002" se convirtió en el site real "127HCC"). ----
         var seedSites = new[]
         {
             (Code: "069", Slug: "XjUS3", Emails: (string?)"ramces.rodriguez@mastercorp.com"),
-            (Code: "127 HCC", Slug: "Kp7Qm", Emails: (string?)"learsy.betancourt@mastercorp.com, carlos.reyes@mastercorp.com, gilberto.espinoza@mastercorp.com"),
+            (Code: "127HCC", Slug: "Kp7Qm", Emails: (string?)"learsy.betancourt@mastercorp.com, carlos.reyes@mastercorp.com, gilberto.espinoza@mastercorp.com"),
             (Code: "200BOY", Slug: "Vn5Tq", Emails: (string?)"sherri.clapper@mastercorp.com, jodi.hazel@mastercorp.com, theresa.schneider@mastercorp.com, marianne.watkins@mastercorp.com"),
             // Los placeholders 003 y 004 se eliminaron: no se siembran más. Si se
             // vuelven a agregar aquí, reaparecerían en el panel al siguiente arranque.
@@ -68,9 +68,9 @@ public static class DemoSeeder
                 db.Sites.Add(new Site { Code = s.Code, Slug = s.Slug, Emails = s.Emails });
                 continue;
             }
-            // El placeholder "002" pasa a ser el site real "127 HCC". Si el code ya fue
+            // El placeholder "002" pasa a ser el site real "127HCC". Si el code ya fue
             // cambiado a otra cosa desde el panel, no se toca.
-            if (existing.Code == "002" && s.Code == "127 HCC")
+            if (existing.Code == "002" && s.Code == "127HCC")
             {
                 existing.Code = s.Code;
                 // Los emails solo se siembran EN ESTE MOMENTO de la transición (una sola
@@ -253,7 +253,7 @@ public static class DemoSeeder
     private static readonly string[] Vacuums069 =
         Enumerable.Range(1, 16).Select(i => $"VAC-{i:D3}").ToArray();
 
-    // Site 127 HCC: 11 numerados + los 2 janitorial con nombre propio.
+    // Site 127HCC: 11 numerados + los 2 janitorial con nombre propio.
     private static readonly string[] Vacuums127 =
         Enumerable.Range(1, 11).Select(i => $"VAC-{i:D3}")
                   .Concat(new[] { "VAC-TIMESQUARE", "VAC-FRONTDESK" })

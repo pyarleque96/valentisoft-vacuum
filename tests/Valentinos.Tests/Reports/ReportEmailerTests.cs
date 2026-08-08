@@ -51,7 +51,7 @@ public class ReportEmailerTests
         var s069 = new Site { Code = "069", Slug = "XjUS3", Emails = "ramces.rodriguez@mastercorp.com" };
         var s127 = new Site
         {
-            Code = "127 HCC",
+            Code = "127HCC",
             Slug = "Kp7Qm",
             Emails = "learsy.betancourt@mastercorp.com, carlos.reyes@mastercorp.com, gilberto.espinoza@mastercorp.com"
         };
@@ -95,7 +95,7 @@ public class ReportEmailerTests
             "gilberto.espinoza@mastercorp.com"
         }, sent.To);
         Assert.False(sent.IncludeCc);
-        Assert.Contains("Site 127 HCC", sent.Subject);
+        Assert.Contains("Site 127HCC", sent.Subject);
         Assert.Equal(sent.To, to);
     }
 
@@ -109,7 +109,7 @@ public class ReportEmailerTests
 
         var sent = Assert.Single(sender.Sends);
         Assert.Contains("VAC-SOLO127", sent.Body);
-        Assert.Contains("Site 127 HCC", sent.Body);
+        Assert.Contains("Site 127HCC", sent.Body);
         Assert.DoesNotContain("VAC-SOLO069", sent.Body);
         Assert.DoesNotContain("Site 069", sent.Body);
     }

@@ -58,7 +58,7 @@ public class ReportEmailer
 
         var sites = await _db.Sites.IgnoreQueryFilters()
             .Where(s => s.TenantId == tenant.Id)
-            .OrderByDescending(s => s.Code)   // 127 HCC antes que 069
+            .OrderByDescending(s => s.Code)   // 127HCC antes que 069
             .Select(s => new { s.Id, s.Code })
             .ToListAsync(ct);
 

@@ -36,7 +36,7 @@ public class DemoSeederTests
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
         var site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");
-        Assert.Equal("127 HCC", site.Code);
+        Assert.Equal("127HCC", site.Code);
         Assert.Equal(Emails127, site.Emails);
 
         var vacs = await db.Assets.IgnoreQueryFilters()
@@ -108,8 +108,8 @@ public class DemoSeederTests
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
-        // Solo 069 y 127 HCC: los placeholders 003 y 004 se eliminaron del seeder.
-        Assert.Equal(3, await db.Sites.IgnoreQueryFilters().CountAsync());      // 069, 127 HCC y 200BOY
+        // Solo 069 y 127HCC: los placeholders 003 y 004 se eliminaron del seeder.
+        Assert.Equal(3, await db.Sites.IgnoreQueryFilters().CountAsync());      // 069, 127HCC y 200BOY
         Assert.Equal(57, await db.Assets.IgnoreQueryFilters().CountAsync());    // 16 + 13 + 28
         Assert.Equal(35, await db.Employees.IgnoreQueryFilters().CountAsync()); // 16 + 5 + 14
     }
@@ -126,7 +126,7 @@ public class DemoSeederTests
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
         var site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");
-        Assert.Equal("127 HCC", site.Code);
+        Assert.Equal("127HCC", site.Code);
         Assert.Equal(Emails127, site.Emails);
     }
 
@@ -142,7 +142,7 @@ public class DemoSeederTests
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
         var site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");
-        Assert.Equal("127 HCC", site.Code);
+        Assert.Equal("127HCC", site.Code);
         Assert.Equal("otro@mastercorp.com", site.Emails);
     }
 
@@ -151,7 +151,7 @@ public class DemoSeederTests
     {
         var (db, ctx) = NewDbConTenant();
 
-        // Primer arranque: la migración "002" -> "127 HCC" siembra los emails.
+        // Primer arranque: la migración "002" -> "127HCC" siembra los emails.
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
         var site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");
         Assert.Equal(Emails127, site.Emails);
@@ -161,7 +161,7 @@ public class DemoSeederTests
         await db.SaveChangesAsync();
 
         // Segundo arranque (reinicio de la app): el seeder no debe volver a sembrarlos,
-        // porque la transición "002" -> "127 HCC" ya ocurrió.
+        // porque la transición "002" -> "127HCC" ya ocurrió.
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
         site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Kp7Qm");

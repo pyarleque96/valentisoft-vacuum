@@ -8,7 +8,7 @@ namespace Valentinos.Tests.Reports;
 // que realmente ve quien abre la página.
 public class KpiHtmlRenderTests
 {
-    private static PeriodKpi Modelo(string siteCode = "127 HCC", string period = "daily")
+    private static PeriodKpi Modelo(string siteCode = "127HCC", string period = "daily")
         => Valentinos.Api.Kpi.Kpi.Compute($"MasterCorp · Site {siteCode}",
             System.Array.Empty<KpiCheckin>(), System.Array.Empty<KpiUnavailable>(),
             System.DateTime.Now, period);
@@ -43,7 +43,7 @@ public class KpiHtmlRenderTests
     {
         var sites = new[]
         {
-            new KpiSiteOption("Kp7Qm", "127 HCC"),
+            new KpiSiteOption("Kp7Qm", "127HCC"),
             new KpiSiteOption("XjUS3", "069"),
         };
 
