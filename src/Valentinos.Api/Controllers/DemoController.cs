@@ -1290,7 +1290,7 @@ $@"<div class=""card"">
       <div class=""ac-list"" id=""codeList""></div>
     </div>
     <label class=""chk""><input type=""checkbox"" id=""logo"" checked> <span data-i18n=""logoLbl"">Include logo in the center</span></label>
-    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6"" data-i18n=""dlSheet"" target=""_blank"" rel=""noopener"" onclick=""return printGuard(event)"">🖨 Print all QRs (PDF)</a>
+    <a class=""btn"" href=""/qr/{slugUrl}/sheet.pdf?base={baseParam}&amp;perpage=6&amp;v={QrAssetVersion}"" data-i18n=""dlSheet"" target=""_blank"" rel=""noopener"" onclick=""return printGuard(event)"">🖨 Print all QRs (PDF)</a>
   </div>
 
   <div class=""card qrbox"">
