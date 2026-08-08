@@ -268,6 +268,11 @@ public class DemoController : ControllerBase
         var logo = LoadBrandLogo("mastercorp");
         var pngs = codes.Select(c => _qr.RenderPngForUrl(EquipmentUrl(baseUrl, siteSlug, c), c, logo)).ToList();
 
+        // El QR fijo del cuarto de housekeeping cierra la hoja: así quien imprime los QR
+        // de las aspiradoras se lleva en el mismo PDF el de "no hay equipo disponible",
+        // sin tener que descargarlo aparte desde el generador.
+        pngs.Add(_qr.RenderPngForUrl(FixedUrl(baseUrl, siteSlug), "HOUSEKEEPING", logo));
+
         var pdf = Qr.QrSheetPdf.Render(pngs, perpage);
         return File(pdf, "application/pdf");
     }
