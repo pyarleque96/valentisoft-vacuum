@@ -72,6 +72,35 @@ public class DemoSeederTests
     }
 
     [Fact]
+    public async Task Seed_CreaElSite200BOYConSus28VacuumsYSus14Empleados()
+    {
+        var (db, ctx) = NewDbConTenant();
+
+        await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
+
+        var site = await db.Sites.IgnoreQueryFilters().FirstAsync(s => s.Slug == "Vn5Tq");
+        Assert.Equal("200BOY", site.Code);
+        Assert.Equal(
+            "sherri.clapper@mastercorp.com, jodi.hazel@mastercorp.com, "
+            + "theresa.schneider@mastercorp.com, marianne.watkins@mastercorp.com",
+            site.Emails);
+
+        var vacs = await db.Assets.IgnoreQueryFilters()
+            .Where(a => a.SiteId == site.Id).Select(a => a.Codigo).ToListAsync();
+        Assert.Equal(28, vacs.Count);
+        Assert.Contains("VAC-001", vacs);
+        Assert.Contains("VAC-028", vacs);
+        Assert.DoesNotContain("VAC-029", vacs);
+
+        var emps = await db.Employees.IgnoreQueryFilters()
+            .Where(e => e.SiteId == site.Id).Select(e => e.Nombre).ToListAsync();
+        Assert.Equal(14, emps.Count);
+        Assert.Contains("Alfaro Flores, Kevin E", emps);
+        Assert.Contains("Marroquin Marroquin, Sirli Y", emps);
+        Assert.Contains("Strickler, Dyllan", emps);
+    }
+
+    [Fact]
     public async Task Seed_EsIdempotente_NoDuplicaNada()
     {
         var (db, ctx) = NewDbConTenant();
@@ -80,9 +109,9 @@ public class DemoSeederTests
         await DemoSeeder.SeedAsync(db, ctx, "christopher.davey@mastercorp.com");
 
         // Solo 069 y 127 HCC: los placeholders 003 y 004 se eliminaron del seeder.
-        Assert.Equal(2, await db.Sites.IgnoreQueryFilters().CountAsync());
-        Assert.Equal(29, await db.Assets.IgnoreQueryFilters().CountAsync());   // 16 del 069 + 13 del 127
-        Assert.Equal(21, await db.Employees.IgnoreQueryFilters().CountAsync()); // 16 + 5
+        Assert.Equal(3, await db.Sites.IgnoreQueryFilters().CountAsync());      // 069, 127 HCC y 200BOY
+        Assert.Equal(57, await db.Assets.IgnoreQueryFilters().CountAsync());    // 16 + 13 + 28
+        Assert.Equal(35, await db.Employees.IgnoreQueryFilters().CountAsync()); // 16 + 5 + 14
     }
 
     [Fact]

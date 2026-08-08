@@ -50,6 +50,7 @@ public static class DemoSeeder
         {
             (Code: "069", Slug: "XjUS3", Emails: (string?)"ramces.rodriguez@mastercorp.com"),
             (Code: "127 HCC", Slug: "Kp7Qm", Emails: (string?)"learsy.betancourt@mastercorp.com, carlos.reyes@mastercorp.com, gilberto.espinoza@mastercorp.com"),
+            (Code: "200BOY", Slug: "Vn5Tq", Emails: (string?)"sherri.clapper@mastercorp.com, jodi.hazel@mastercorp.com, theresa.schneider@mastercorp.com, marianne.watkins@mastercorp.com"),
             // Los placeholders 003 y 004 se eliminaron: no se siembran más. Si se
             // vuelven a agregar aquí, reaparecerían en el panel al siguiente arranque.
         };
@@ -83,6 +84,7 @@ public static class DemoSeeder
 
         var site069 = await db.Sites.FirstAsync(x => x.Slug == "XjUS3");
         var site127 = await db.Sites.FirstAsync(x => x.Slug == "Kp7Qm");
+        var site200 = await db.Sites.FirstAsync(x => x.Slug == "Vn5Tq");
 
         // ---- Usuarios admin del tenant. Password hasheada (PBKDF2). ----
         // NOTA: credenciales semilla de demo; cambiar en un entorno real.
@@ -114,6 +116,7 @@ public static class DemoSeeder
         // (que es compartido entre sites) ni un conteo global de assets.
         await SeedVacuumsAsync(db, tipo.Id, site069.Id, Vacuums069);
         await SeedVacuumsAsync(db, tipo.Id, site127.Id, Vacuums127);
+        await SeedVacuumsAsync(db, tipo.Id, site200.Id, Vacuums200);
 
         // Backfill: vacuums existentes sin site (SiteId vacío) -> Site 069.
         var huerfanos = await db.Assets.Where(a => a.SiteId == Guid.Empty).ToListAsync();
@@ -137,6 +140,7 @@ public static class DemoSeeder
         // Empleados POR SITE (para el autocompletar del formulario de cada site).
         await SeedEmployeesAsync(db, site069.Id, Empleados069);
         await SeedEmployeesAsync(db, site127.Id, Empleados127);
+        await SeedEmployeesAsync(db, site200.Id, Empleados200);
 
         // Sembrado de reportes fake DESACTIVADO (producción arranca limpio). Poner en true
         // solo si se quiere volver a poblar el dashboard con data de demo.
@@ -254,6 +258,28 @@ public static class DemoSeeder
         Enumerable.Range(1, 11).Select(i => $"VAC-{i:D3}")
                   .Concat(new[] { "VAC-TIMESQUARE", "VAC-FRONTDESK" })
                   .ToArray();
+
+    // Site 200BOY (Mountain Run at Boyne): 28 vacuums numerados.
+    private static readonly string[] Vacuums200 =
+        Enumerable.Range(1, 28).Select(i => $"VAC-{i:D3}").ToArray();
+
+    private static readonly string[] Empleados200 =
+    {
+        "Alfaro Flores, Kevin E",
+        "Carcamo Osorio, Lorena",
+        "Cifuentes Zecena, Lisbett V",
+        "Cortez Orellana, Maria",
+        "Cuadra Pineda, Erika",
+        "Estrada, Jennifer Noemy",
+        "Garcia, Yesenia Y",
+        "Lapointe, Melisa",
+        "Lopez Carranza, Elvin",
+        "Marroquin Marroquin, Sirli Y",
+        "Martinez, Monica",
+        "Perez Contreras, Vilma E",
+        "Ruiz Mancia, Iliana",
+        "Strickler, Dyllan"
+    };
 
     private static readonly string[] Empleados127 =
     {
