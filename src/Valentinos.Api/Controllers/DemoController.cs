@@ -1,8 +1,10 @@
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Valentinos.Application.Qr;
@@ -207,6 +209,16 @@ public class DemoController : ControllerBase
 
     private Guid Tid => _tenant.TenantId ?? Guid.Empty;
 
+    // Defensa en profundidad para las rutas autenticadas de este controlador: el tenant
+    // del claim de la cookie DEBE coincidir con el del subdominio. Las cookies son
+    // host-only, así que el cruce no ocurre en condiciones normales; esto lo cierra igual,
+    // con el mismo criterio que ya aplica AdminController.
+    private bool TenantDelUsuarioCoincide()
+    {
+        var claim = User.FindFirstValue("tenant");
+        return Guid.TryParse(claim, out var userTenant) && userTenant != Guid.Empty && userTenant == Tid;
+    }
+
     // Generador de QR de un SITE (panel admin). Acepta guid o slug.
     // Vista pública (solo lectura): el generador de QR es accesible sin login.
     // La gestión de sites/vacuums sigue protegida en AdminController.
@@ -408,12 +420,11 @@ public class DemoController : ControllerBase
         return Content(html, "text/html; charset=utf-8");
     }
 
-    // ---------- Dashboard de KPIs por SITE (panel admin) ----------
-    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadSiteCheckinsAsync(string key)
+    // ---------- Dashboard de KPIs por SITE (vistas privada y pública) ----------
+    // Check-ins y "no disponibles" de los últimos 30 días de un site YA resuelto.
+    private async Task<(List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)>
+        LoadCheckinsForSiteAsync(Domain.Entities.Site site)
     {
-        var (_, site) = await ResolveSiteInTenantAsync(key);
-        if (site is null) return (null, null, new(), new());
-        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
         var since = DateTime.Now.Date.AddDays(-29);
         var list = await _db.StatusCheckins.IgnoreQueryFilters()
             .Where(c => c.SiteId == site.Id && c.CreatedAt >= since)
@@ -425,6 +436,17 @@ public class DemoController : ControllerBase
             .OrderByDescending(u => u.CreatedAt)
             .Select(u => new Kpi.KpiUnavailable(u.EmployeeName, u.Nota, u.CreatedAt))
             .ToListAsync();
+        return (list, unav);
+    }
+
+    // Variante para la vista privada, que resuelve el site por "key" (guid o slug) dentro
+    // del tenant del subdominio.
+    private async Task<(Domain.Entities.Tenant? tenant, Domain.Entities.Site? site, List<Kpi.KpiCheckin> checkins, List<Kpi.KpiUnavailable> unavailable)> LoadSiteCheckinsAsync(string key)
+    {
+        var (_, site) = await ResolveSiteInTenantAsync(key);
+        if (site is null) return (null, null, new(), new());
+        var tenant = await _db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == Tid);
+        var (list, unav) = await LoadCheckinsForSiteAsync(site);
         return (tenant, site, list, unav);
     }
 
@@ -436,13 +458,15 @@ public class DemoController : ControllerBase
         return def?.Slug;
     }
 
-    // Vista pública (solo lectura): dashboard de KPIs en /reports?site={slugOrGuid}.
-    // Si no se pasa site, usa el site por defecto. La página trae un dropdown con
-    // los sites disponibles del tenant (el actual queda seleccionado).
-    [AllowAnonymous]
+    // Vista PRIVADA (admin): dashboard de KPIs multi-site en /reports?site={slugOrGuid}.
+    // Si no se pasa site, usa el site por defecto. Trae el dropdown con los sites del
+    // tenant. La vista pública por site vive en /{siteSlug}/reports.
+    [Authorize(Roles = "admin")]
     [HttpGet("/reports")]
     public async Task<IActionResult> KpiPage([FromQuery] string? site, [FromQuery] string? period)
     {
+        if (!TenantDelUsuarioCoincide()) return Redirect("/login");
+
         var key = await ReportsSiteKeyAsync(site);
         if (string.IsNullOrWhiteSpace(key)) return NotFound();
         var (tenant, s, list, unav) = await LoadSiteCheckinsAsync(key);
@@ -478,16 +502,51 @@ public class DemoController : ControllerBase
         return Content(msg, "text/plain; charset=utf-8");
     }
 
-    // Parte de la vista pública de reportes (descargar el PDF): /reports/pdf?site={key}.
-    [AllowAnonymous]
+    // Vista PRIVADA (admin): descarga el PDF del dashboard multi-site en /reports/pdf?site={key}.
+    [Authorize(Roles = "admin")]
     [HttpGet("/reports/pdf")]
     public async Task<IActionResult> KpiPdfPreview([FromQuery] string? site, [FromQuery] string? period)
     {
+        if (!TenantDelUsuarioCoincide()) return Redirect("/login");
+
         var key = await ReportsSiteKeyAsync(site);
         if (string.IsNullOrWhiteSpace(key)) return NotFound();
         var (tenant, s, list, unav) = await LoadSiteCheckinsAsync(key);
         if (tenant is null || s is null) return NotFound();
         var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {s.Code}", list, unav, DateTime.Now, period ?? "daily");
+        return File(Kpi.KpiPdf.Render(model), "application/pdf");
+    }
+
+    // ---------- Vista PÚBLICA de KPIs, por site ----------
+    // /{siteSlug}/reports: solo la data de ese site y SIN el dropdown de sites. El slug
+    // aleatorio de la URL es la única barrera, igual que en las rutas de los QR impresos.
+    // Se resuelve con ResolveSiteAsync (slug exacto) y NO con ReportsSiteKeyAsync, que
+    // acepta guid y cae al site por defecto: aquí la URL manda y un ?site= se ignora.
+    [AllowAnonymous]
+    [EnableRateLimiting("public-reports")]
+    [HttpGet("/{siteSlug}/reports")]
+    public async Task<IActionResult> SiteKpiPage(string siteSlug, [FromQuery] string? period)
+    {
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return NotFound();
+
+        var (list, unav) = await LoadCheckinsForSiteAsync(site);
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", list, unav, DateTime.Now, period ?? "daily");
+        return Content(Kpi.KpiHtml.Render(model, site.Slug, System.Array.Empty<Kpi.KpiSiteOption>()),
+            "text/html; charset=utf-8");
+    }
+
+    // PDF de la vista pública: el mismo reporte, del mismo site y de ninguno más.
+    [AllowAnonymous]
+    [EnableRateLimiting("public-reports")]
+    [HttpGet("/{siteSlug}/reports/pdf")]
+    public async Task<IActionResult> SiteKpiPdf(string siteSlug, [FromQuery] string? period)
+    {
+        var (tenant, site) = await ResolveSiteAsync(siteSlug);
+        if (tenant is null || site is null) return NotFound();
+
+        var (list, unav) = await LoadCheckinsForSiteAsync(site);
+        var model = Kpi.Kpi.Compute($"{tenant.Nombre} · Site {site.Code}", list, unav, DateTime.Now, period ?? "daily");
         return File(Kpi.KpiPdf.Render(model), "application/pdf");
     }
 

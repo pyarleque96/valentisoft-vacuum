@@ -24,10 +24,29 @@ public static class KpiHtml
         string Sel(string v, string en) =>
             $@"<option value=""{v}""{(m.Period == v ? " selected" : "")} data-i18n=""p_{v}"">{en}</option>";
 
-        // Opciones del dropdown de sites; el actual queda seleccionado.
+        // Dos modos de la misma vista:
+        //  · privada  -> `sites` trae los sites del tenant: se pinta el dropdown y las
+        //                URLs cuelgan de /reports con ?site=.
+        //  · pública  -> `sites` viene vacía: NO se emite el bloque del selector (el HTML
+        //                no debe contener slugs ni códigos de otros sites) y las URLs
+        //                cuelgan de /{slug}/reports.
+        var multiSite = sites.Count > 0;
+
         var siteOpts = new StringBuilder();
         foreach (var s in sites)
             siteOpts.Append($@"<option value=""{H(s.Slug)}""{(s.Slug == slug ? " selected" : "")}>Site {H(s.Code)}</option>");
+
+        var siteSelect = multiSite
+            ? $@"<select id=""site"" onchange=""location.href='/reports?site='+this.value+'&period={H(m.Period)}'"">{siteOpts}</select>"
+            : string.Empty;
+
+        var periodHref = multiSite
+            ? $"/reports?site={H(slug)}&period="
+            : $"/{H(slug)}/reports?period=";
+
+        var pdfHref = multiSite
+            ? $"/reports/pdf?site={H(slug)}&period={H(m.Period)}"
+            : $"/{H(slug)}/reports/pdf?period={H(m.Period)}";
 
         // Sin registros en el periodo: el botón de PDF muestra un modal en vez de exportar vacío.
         var noDataJs = (m.Total + m.Un) == 0 ? "true" : "false";
@@ -189,13 +208,11 @@ public static class KpiHtml
       </div>
     </div>
     <div class=""controls"">
-      <select id=""site"" onchange=""location.href='/reports?site='+this.value+'&period={H(m.Period)}'"">
-        {siteOpts}
-      </select>
-      <select id=""period"" onchange=""location.href='/reports?site={H(slug)}&period='+this.value"">
+      {siteSelect}
+      <select id=""period"" onchange=""location.href='{periodHref}'+this.value"">
         {Sel("daily", "Daily")}{Sel("weekly", "Weekly")}{Sel("monthly", "Monthly")}
       </select>
-      <a class=""btn"" href=""/reports/pdf?site={H(slug)}&period={H(m.Period)}"" target=""_blank"" data-i18n=""dlpdf"" onclick=""return pdfGuard(event)"">📄 Download PDF</a>
+      <a class=""btn"" href=""{pdfHref}"" target=""_blank"" data-i18n=""dlpdf"" onclick=""return pdfGuard(event)"">📄 Download PDF</a>
     </div>
     <div id=""msg""></div>
   </div>

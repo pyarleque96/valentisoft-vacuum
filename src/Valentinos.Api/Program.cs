@@ -37,7 +37,15 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddScoped<Valentinos.Api.Reports.ReportEmailer>();
 builder.Services.AddScoped<Valentinos.Api.Reports.DailyReportRunner>();
-builder.Services.AddHostedService<Valentinos.Api.Reports.DailyReportScheduler>();
+
+// NO registrar el scheduler en entorno "Testing": cada WebApplicationFactory de los
+// tests de integración levanta un host real, y si el scheduler corriera ahí, entre
+// las 10:00 y las 10:15 hora local dispararía un envío real. SmtpEmailSender solo
+// corta el envío si Smtp:Enabled=false, y ese flag vive en un user-secret local que
+// puede estar en true — o sea, correr la suite en esa ventana podría mandar un email
+// real a personas reales desde un test. No quitar este guard.
+if (!builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<Valentinos.Api.Reports.DailyReportScheduler>();
 
 // Autenticación por cookie para el panel admin.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
