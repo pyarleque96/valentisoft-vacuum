@@ -7,6 +7,8 @@ namespace Valentinos.Api.Qr;
 public static class QrSheetPdf
 {
     private const float W = 595f, Hgt = 842f, M = 36f; // A4 ~72dpi
+    // Borde de corte: separación entre el QR y el marco, y grosor del marco.
+    private const float CutMargin = 6f, CutStroke = 0.8f;
 
     public static byte[] Render(IReadOnlyList<byte[]> qrPngs, int perPage = 6)
     {
@@ -21,6 +23,17 @@ public static class QrSheetPdf
         using (var doc = SKDocument.CreatePdf(ms))
         {
             var pages = Math.Max(1, (int)Math.Ceiling(qrPngs.Count / (double)perPage));
+
+            // Marco negro fino alrededor de cada QR para recortarlos con tijera al
+            // imprimir la hoja. Va separado del contenido (CutMargin) para dar tolerancia
+            // al corte y no invadir la zona silenciosa que el lector de QR necesita.
+            using var cutPaint = new SKPaint
+            {
+                Style = SKPaintStyle.Stroke,
+                Color = SKColors.Black,
+                StrokeWidth = CutStroke,
+                IsAntialias = true
+            };
             for (var page = 0; page < pages; page++)
             {
                 var canvas = doc.BeginPage(W, Hgt);
@@ -46,6 +59,11 @@ public static class QrSheetPdf
                     var dy = y + (cellH - dh) / 2f;
                     canvas.DrawBitmap(bmp, new SKRect(dx, dy, dx + dw, dy + dh),
                         new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+
+                    canvas.DrawRect(
+                        new SKRect(dx - CutMargin, dy - CutMargin,
+                                   dx + dw + CutMargin, dy + dh + CutMargin),
+                        cutPaint);
                 }
                 doc.EndPage();
             }
