@@ -53,6 +53,16 @@ public class DemoController : ControllerBase
         $"/{Uri.EscapeDataString(siteSlug)}/e/{Uri.EscapeDataString(codigo)}/report";
 
     // URL pública del QR fijo (equipo no disponible) de un site.
+    // Los QR se generan al vuelo y son baratos, pero cambian cuando cambia la etiqueta o
+    // la URL que codifican. Cloudflare cachea imágenes por defecto (4 h), y un QR viejo
+    // servido desde caché puede terminar impreso y pegado en un equipo apuntando a una
+    // ruta que ya no existe. Por eso estos endpoints se sirven sin caché.
+    private void NoStore()
+    {
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+        Response.Headers.Pragma = "no-cache";
+    }
+
     private static string FixedUrl(string baseUrl, string siteSlug) =>
         $"{baseUrl}/{Uri.EscapeDataString(siteSlug)}/f/hk";
 
@@ -176,6 +186,7 @@ public class DemoController : ControllerBase
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
         var url = EquipmentUrl(baseUrl, siteSlug, codigo);
         var png = _qr.RenderPngForUrl(url, codigo, LoadBrandLogo("mastercorp"));
+        NoStore();
         return File(png, "image/png");
     }
 
@@ -191,6 +202,7 @@ public class DemoController : ControllerBase
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
         var url = EquipmentUrl(baseUrl, siteSlug, codigo);
         var png = _qr.RenderPngForUrl(url, codigo, LoadBrandLogo(logo ?? "mastercorp"));
+        NoStore();
         if (download == 1)
             return File(png, "image/png", $"QR-{codigo}.png");
         return File(png, "image/png");
@@ -203,8 +215,9 @@ public class DemoController : ControllerBase
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
         var url = FixedUrl(baseUrl, siteSlug);
         var png = _qr.RenderPngForUrl(url, "HOUSEKEEPING (NO VACUUM)", LoadBrandLogo("mastercorp"));
+        NoStore();
         if (download == 1)
-            return File(png, "image/png", "QR-housekeeping.png");
+            return File(png, "image/png", "QR-housekeeping-no-vacuum.png");
         return File(png, "image/png");
     }
 
@@ -274,6 +287,7 @@ public class DemoController : ControllerBase
         pngs.Add(_qr.RenderPngForUrl(FixedUrl(baseUrl, siteSlug), "HOUSEKEEPING (NO VACUUM)", logo));
 
         var pdf = Qr.QrSheetPdf.Render(pngs, perpage);
+        NoStore();
         return File(pdf, "application/pdf");
     }
 
@@ -1281,7 +1295,7 @@ $@"<div class=""card"">
   </div>
 
   <div class=""card qrbox"">
-    <h1 style=""font-size:15px;margin:0 0 4px"" data-i18n=""fixedTitle"">Fixed QR · Housekeeping room</h1>
+    <h1 style=""font-size:15px;margin:0 0 4px"" data-i18n=""fixedTitle"">Fixed QR · HOUSEKEEPING (NO VACUUM)</h1>
     <div class=""sub"" style=""margin-bottom:12px"" data-i18n=""fixedDesc"">To report unavailable equipment (without scanning a specific one).</div>
     <div class=""qrframe""><img alt=""QR fijo housekeeping"" src=""/qr/{slugUrl}/fixed.png?base={baseParam}""><button type=""button"" class=""qr-dl"" id=""saveFixed"" title=""Save"" aria-label=""Save"">{dlIco}</button></div>
     <div class=""urlrow"">
@@ -1307,11 +1321,11 @@ $@"<div class=""card"">
   function closeNoVac(){{ document.getElementById('noVacModal').classList.remove('show'); }}
   const I18N = {{
     en: {{ genTitle:'QR Generator', codeLbl:'Equipment code', logoLbl:'Include logo in the center',
-      dlSheet:'🖨 Print all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · Housekeeping room',
+      dlSheet:'🖨 Print all QRs (PDF)', dlBtn:'⬇ Download PNG', fixedTitle:'Fixed QR · HOUSEKEEPING (NO VACUUM)',
       fixedDesc:'To report unavailable equipment (without scanning a specific one).', dlFixed:'⬇ Download fixed QR',
       nvTitle:'No data available', nvMsg:""This site has no vacuums yet, so there's nothing to print."", nvClose:'Close' }},
     es: {{ genTitle:'Generador de QR', codeLbl:'Código del equipo', logoLbl:'Incluir logo al centro',
-      dlSheet:'🖨 Imprimir todos los QR (PDF)', dlBtn:'⬇ Descargar PNG', fixedTitle:'QR fijo · Cuarto de housekeeping',
+      dlSheet:'🖨 Imprimir todos los QR (PDF)', dlBtn:'⬇ Descargar PNG', fixedTitle:'QR fijo · HOUSEKEEPING (NO VACUUM)',
       fixedDesc:'Para reportar un equipo no disponible (sin escanear un equipo específico).', dlFixed:'⬇ Descargar QR fijo',
       nvTitle:'No hay data disponible', nvMsg:'Este site aún no tiene aspiradoras, así que no hay nada para imprimir.', nvClose:'Cerrar' }}
   }};
@@ -1405,7 +1419,7 @@ $@"<div class=""card"">
     saveImage(imgUrl(false), 'QR-' + code + '.png', this);
   }});
   document.getElementById('saveFixed').addEventListener('click', function () {{
-    saveImage('/qr/' + encodeURIComponent(SLUG) + '/fixed.png?base=' + encodeURIComponent(BASE), 'QR-housekeeping.png', this);
+    saveImage('/qr/' + encodeURIComponent(SLUG) + '/fixed.png?base=' + encodeURIComponent(BASE), 'QR-housekeeping-no-vacuum.png', this);
   }});
   acWire();
   refresh();
