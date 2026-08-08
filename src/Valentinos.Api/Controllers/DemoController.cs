@@ -202,7 +202,7 @@ public class DemoController : ControllerBase
     {
         var baseUrl = string.IsNullOrWhiteSpace(@base) ? PublicBaseUrl() : @base.TrimEnd('/');
         var url = FixedUrl(baseUrl, siteSlug);
-        var png = _qr.RenderPngForUrl(url, "HOUSEKEEPING", LoadBrandLogo("mastercorp"));
+        var png = _qr.RenderPngForUrl(url, "HOUSEKEEPING (NO VACUUM)", LoadBrandLogo("mastercorp"));
         if (download == 1)
             return File(png, "image/png", "QR-housekeeping.png");
         return File(png, "image/png");
@@ -271,7 +271,7 @@ public class DemoController : ControllerBase
         // El QR fijo del cuarto de housekeeping cierra la hoja: así quien imprime los QR
         // de las aspiradoras se lleva en el mismo PDF el de "no hay equipo disponible",
         // sin tener que descargarlo aparte desde el generador.
-        pngs.Add(_qr.RenderPngForUrl(FixedUrl(baseUrl, siteSlug), "HOUSEKEEPING", logo));
+        pngs.Add(_qr.RenderPngForUrl(FixedUrl(baseUrl, siteSlug), "HOUSEKEEPING (NO VACUUM)", logo));
 
         var pdf = Qr.QrSheetPdf.Render(pngs, perpage);
         return File(pdf, "application/pdf");

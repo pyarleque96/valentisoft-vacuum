@@ -8,6 +8,8 @@ public class SkiaQrRenderer : IQrRenderer
 {
     private const int ModulePixels = 12;   // tamaño de cada módulo del QR en px
     private const int LabelHeight = 64;     // franja inferior para el código impreso
+    private const float MaxLabelSize = 34f; // tamaño de fuente de la etiqueta
+    private const float MinLabelSize = 14f; // piso al achicarla para que quepa
 
     private readonly QrOptions _options;
 
@@ -74,10 +76,17 @@ public class SkiaQrRenderer : IQrRenderer
             }
         }
 
-        // 4) Código impreso centrado en la franja inferior.
+        // 4) Código impreso centrado en la franja inferior. El tamaño se reduce hasta que
+        // la etiqueta quepa a lo ancho: conviven códigos cortos (VAC-001) con otros muy
+        // largos (HOUSEKEEPING (NO VACUUM)), y además el ancho del QR no es fijo —depende
+        // de cuántos módulos necesite la URL—, así que dibujar a tamaño fijo desbordaba.
         using (var textPaint = new SKPaint { Color = SKColors.Black, IsAntialias = true })
-        using (var font = new SKFont(SKTypeface.FromFamilyName("Arial") ?? SKTypeface.Default, 34))
+        using (var font = new SKFont(SKTypeface.FromFamilyName("Arial") ?? SKTypeface.Default, MaxLabelSize))
         {
+            var maxWidth = side * 0.92f;   // deja un margen a cada lado
+            while (font.Size > MinLabelSize && font.MeasureText(codeLabel) > maxWidth)
+                font.Size -= 1f;
+
             var baseline = side + (LabelHeight + 24) / 2f + 8;
             canvas.DrawText(codeLabel, side / 2f, baseline, SKTextAlign.Center, font, textPaint);
         }
